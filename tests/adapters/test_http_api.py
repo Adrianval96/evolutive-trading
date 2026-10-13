@@ -39,7 +39,6 @@ def test_queues_a_run_and_answers_202(client, db_path):
 
     assert response.status_code == 202
     body = response.json()
-    contract("RunCreatedEnvelope", body)
     assert body["data"]["status"] == "queued"
     assert body["data"]["agents"] == [{"id": "agt_1", "label": "trend"}, {"id": "agt_2", "label": "buy-and-hold"}]
 
@@ -54,6 +53,7 @@ def test_queues_a_run_and_answers_202(client, db_path):
         "strategy": "ma-crossover",
         "parameters": {"fast": 5, "slow": 20, "stop_loss": 0.05},
     }
+    contract("RunCreatedEnvelope", body)
 
 
 def test_keeps_the_costs_it_was_given(client, db_path):
@@ -86,15 +86,15 @@ def test_rejects_invalid_runs_with_the_error_envelope(client, db_path, change, m
 
     assert response.status_code == 400
     body = response.json()
-    contract("ErrorEnvelope", body)
     assert body["error"]["code"] == "invalid_parameters"
     assert message in body["error"]["message"]
     assert stored_runs(db_path) == []
+    contract("ErrorEnvelope", body)
 
 
 def test_rejects_a_body_that_is_not_json(client, db_path):
     response = client.post("/v1/runs", content="not json", headers={"content-type": "application/json"})
 
     assert response.status_code == 400
-    contract("ErrorEnvelope", response.json())
     assert stored_runs(db_path) == []
+    contract("ErrorEnvelope", response.json())

@@ -6,7 +6,7 @@ from bars import make_bars
 from contract import contract
 from fastapi.testclient import TestClient
 
-from service import create_app
+from evolutive_trading.bootstrap import create_app
 
 PRICES = {"AAPL": [(10, 10)] * 30, "MSFT": [(20, 20)] * 30}
 RUN = {

@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: evolutive-trading engine API
+  title: strategy-arena engine API
   version: 1.0.0
   description: |
     Simulation service for trading agents. Simulation only; no real money.

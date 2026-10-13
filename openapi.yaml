@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: strategy-arena engine API
-  version: 1.0.0-draft
+  version: 1.0.0
   description: |
     Simulation service for trading agents. Simulation only; no real money.
     Every JSON response is an envelope { success, data, error, meta }. Field names are snake_case.
@@ -29,6 +29,22 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MarketEnvelope" }
   /v1/runs:
+    get:
+      summary: Runs, newest first, with each agent's result reduced to its final equity and return
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: One page of runs; meta carries the total count and the page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunListEnvelope" }
+        "400":
+          description: page or limit is out of range; error.code is invalid_parameters
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     post:
       summary: Queue a simulation
       requestBody:
@@ -305,6 +321,52 @@ components:
         data: { $ref: "#/components/schemas/Run" }
         error: { type: "null" }
         meta: { type: "null" }
+    AgentSummary:
+      type: object
+      required: [agent_id, final_equity, total_return]
+      additionalProperties: false
+      properties:
+        agent_id: { type: string }
+        final_equity: { type: number }
+        total_return: { type: number }
+    ResultSummary:
+      type: object
+      required: [agents]
+      additionalProperties: false
+      properties:
+        agents: { type: array, items: { $ref: "#/components/schemas/AgentSummary" } }
+    RunSummary:
+      description: A Run as listed by GET /v1/runs; the result keeps only final equity and return per agent.
+      type: object
+      required: [id, status, created_at, market, initial_cash, cost_bps, agents, progress, result, failure]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        status: { enum: [queued, running, completed, failed, cancelled] }
+        created_at: { type: string, format: date-time }
+        market: { $ref: "#/components/schemas/MarketSelection" }
+        initial_cash: { type: number }
+        cost_bps: { type: number }
+        agents: { type: array, items: { $ref: "#/components/schemas/Agent" } }
+        progress: { $ref: "#/components/schemas/Progress" }
+        result: { oneOf: [{ $ref: "#/components/schemas/ResultSummary" }, { type: "null" }] }
+        failure: { oneOf: [{ $ref: "#/components/schemas/Failure" }, { type: "null" }] }
+    Page:
+      type: object
+      required: [total, page, limit]
+      additionalProperties: false
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        limit: { type: integer, minimum: 1 }
+    RunListEnvelope:
+      type: object
+      required: [success, data, error, meta]
+      properties:
+        success: { const: true }
+        data: { type: array, items: { $ref: "#/components/schemas/RunSummary" } }
+        error: { type: "null" }
+        meta: { $ref: "#/components/schemas/Page" }
     StepAgent:
       type: object
       required: [agent_id, equity, trades]

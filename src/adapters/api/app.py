@@ -51,7 +51,7 @@ def failure(code: str, message: str, status_code: int) -> JSONResponse:
 
 
 def create_api(queue_run: QueueRun) -> FastAPI:
-    api = FastAPI(title="evolutive-trading engine", version="1.0.0-draft")
+    api = FastAPI(title="strategy-arena engine", version="1.0.0-draft")
 
     @api.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, error: RequestValidationError) -> JSONResponse:

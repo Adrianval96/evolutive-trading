@@ -1,25 +1,22 @@
 # evolutive-trading
 
-Evolve rule-based trading strategies against many possible futures instead of one backtest. Simulation only: no real money.
+Trading agents in a simulated market that moves forward one day at a time. Simulation only: no real money.
 
-[Kronos](https://github.com/shiyu-coder/Kronos) is a foundation model for financial candlesticks. Sampled repeatedly from the same starting point, it produces different, plausible price paths. evolutive-trading uses those paths as the environment: a population of rule-based strategies trades a fresh batch of futures every generation, the strongest survive and are mutated, and the rest are dropped.
+Each day, every agent sees the price history up to that day and decides how much of its money to hold. Orders fill at the next day's open, with trading costs. Each agent has its own account and is scored against buy-and-hold on the same days. Agents are price-takers: their trades never move the market they trade in.
 
-## How it will work
+## Plan
 
-1. **Strategies** are small rule sets described by a few numbers, such as a momentum window, how strong a Kronos forecast must be to act on it, a stop-loss or a position size. Evolution changes the numbers, not the code.
-2. **Futures** are sampled from Kronos once, on a local machine, starting from real market history, and stored as files. Generating them needs torch; everything else does not.
-3. **Evolution** puts every strategy in a generation through the same batch of futures, with trading costs, then keeps the fittest and fills the population with mutated copies of them.
-4. **Reality check**: the champion is compared with buy-and-hold on real price history it never saw during evolution, then forward-tested on an Alpaca paper account with `trader.py`.
-
-It starts with a single instrument (SPY). Kronos forecasts each series on its own, so synthetic futures for several stocks lose the way they move together, and a multi-stock strategy would look safer than it is.
+1. **Backtest harness.** Agents trade a daily replay of one instrument (SPY) forward in time: buy-and-hold and moving-average crossover agents, ending in a leaderboard of return, drawdown and trades.
+2. **Walk-forward agents.** Agents that re-tune their own settings on the recent past as time moves, then trade the period that follows. Does adapting beat a fixed rule?
+3. **A Kronos agent.** [Kronos](https://github.com/shiyu-coder/Kronos), a foundation model for financial candlesticks, as an agent's brain, judged only on data from after its training cutoff.
 
 ## Honest expectations
 
-Evolution optimises whatever it is given, including the quirks of Kronos's generated prices. The likely result is a champion that looks strong on synthetic futures and falls back towards buy-and-hold on real data. The point of the tool is to make that gap visible. A strategy that trades on Kronos forecasts has an unfair edge on Kronos-generated futures, so it is only ever judged on real data.
+Simple technical rules have a long record of not beating buy-and-hold once costs are counted, and searching over many settings manufactures good-looking backtests on its own. The harness exists to measure this honestly: no look-ahead, costs on every trade, buy-and-hold on the same bars.
 
 ## Status
 
-The evolution side is not built yet. What exists is the forward-test end: `trader.py`, a daily loop where Kronos forecasts tomorrow's close for a 20-stock watchlist, the top 5 positive forecasts are held in equal weight, and orders go to an Alpaca **paper** account. Every forecast is appended to `predictions.csv`.
+The harness is not built yet. What exists is the forward-test end: `trader.py`, a daily loop where Kronos forecasts tomorrow's close for a 20-stock watchlist, the top 5 positive forecasts are held in equal weight, and orders go to an Alpaca **paper** account. Every forecast is appended to `predictions.csv`.
 
 ## Setup
 

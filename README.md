@@ -64,8 +64,6 @@ Neither the tests nor the checks need torch, Alpaca or a network (`pip install -
 .venv.nosync/bin/ruff check . && .venv.nosync/bin/mypy && .venv.nosync/bin/lint-imports
 ```
 
-The same checks run in CI.
-
 ## Simulate over past days
 
 The simulation (`evolutive_trading/application/simulate.py`) replays bars day by day: on each day's close every agent sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized. Costs are charged per side on the traded amount.

@@ -1,6 +1,6 @@
 from bars import make_bars
 
-from evolutive_trading.adapters.market_data.csv_bars import available_dates
+from src.adapters.market_data.csv_bars import available_dates
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],

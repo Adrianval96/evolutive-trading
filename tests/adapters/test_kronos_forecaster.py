@@ -3,7 +3,7 @@ import pytest
 from bars import make_bars
 from fakes import FakePredictor
 
-from evolutive_trading.adapters.forecasting.kronos_forecaster import KronosForecaster
+from src.adapters.forecasting.kronos_forecaster import KronosForecaster
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],

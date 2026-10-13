@@ -1,8 +1,8 @@
 import pytest
 from fakes import InMemoryRunRepository
 
-from evolutive_trading.application.queue_run import QueueRun
-from evolutive_trading.domain.model import AgentSpec, InvalidRunError, MarketSelection, RunRequest
+from src.application.queue_run import QueueRun
+from src.domain.model import AgentSpec, InvalidRunError, MarketSelection, RunRequest
 
 AVAILABLE = {"AAPL": ("2026-01-05", "2026-02-27")}
 

@@ -3,8 +3,8 @@ from dataclasses import replace
 
 import pytest
 
-from evolutive_trading.domain.model import Agent, AgentSpec, InvalidRunError, MarketSelection, RunRequest
-from evolutive_trading.domain.validation import normalize_run
+from src.domain.model import Agent, AgentSpec, InvalidRunError, MarketSelection, RunRequest
+from src.domain.validation import normalize_run
 
 AVAILABLE = {"A": ("2026-01-05", "2026-01-08")}
 

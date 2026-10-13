@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from evolutive_trading.domain.model import Run
+from src.domain.model import Run
 
 
 class FakeForecaster:

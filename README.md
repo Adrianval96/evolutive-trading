@@ -66,7 +66,7 @@ Neither the tests nor the checks need torch, Alpaca or a network (`pip install -
 
 ## Simulate over past days
 
-The simulation (`evolutive_trading/application/simulate.py`) replays bars day by day: on each day's close every agent sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized. Costs are charged per side on the traded amount.
+The simulation (`src/application/simulate.py`) replays bars day by day: on each day's close every agent sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized. Costs are charged per side on the traded amount.
 
 ```bash
 set -a; . ./.env; set +a
@@ -85,7 +85,7 @@ Hexagonal: `domain` (rules), `application` (use cases and ports), `adapters` (HT
 An HTTP service that queues simulations. Its contract is [`openapi.yaml`](openapi.yaml): every response is a `{ success, data, error, meta }` envelope with snake_case fields.
 
 ```bash
-EVOLUTIVE_BARS=data/bars.csv .venv.nosync/bin/uvicorn evolutive_trading.bootstrap:create_app --factory
+EVOLUTIVE_BARS=data/bars.csv .venv.nosync/bin/uvicorn src.bootstrap:create_app --factory
 ```
 
 ```bash

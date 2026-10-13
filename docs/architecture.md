@@ -3,7 +3,7 @@
 Hexagonal layout: the business rules sit in the middle and know nothing about HTTP, SQLite, CSV files or Kronos. Those are adapters that plug into ports.
 
 ```
-evolutive_trading/
+src/
   domain/        model.py (dataclasses, Account, InvalidRunError), catalog.py (strategy parameters),
                  strategies.py (behaviours), validation.py (normalize_run)
   application/   ports.py (Forecaster, RunRepository), queue_run.py (QueueRun), simulate.py (run_simulation)

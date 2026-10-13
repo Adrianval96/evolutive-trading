@@ -7,8 +7,8 @@ from bars import make_bars
 from contract import contract
 from fakes import FakeForecaster
 
-from evolutive_trading.application.simulate import run_simulation
-from evolutive_trading.domain.model import Agent, AgentSpec, MarketSelection, Run, StepTrade
+from src.application.simulate import run_simulation
+from src.domain.model import Agent, AgentSpec, MarketSelection, Run, StepTrade
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],

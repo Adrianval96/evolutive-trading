@@ -1,4 +1,4 @@
-# evolutive-trading
+# strategy-arena
 
 A daily trading simulator. Several agents, each running a strategy, trade the same past market side by side with the same starting cash and the same trading costs, so their results can be compared like for like. Simulation only: no real money.
 
@@ -28,8 +28,8 @@ Kronos-small has shown no forecasting edge on data after its June 2024 pre-train
 No torch, Alpaca account or market data needed. Python 3.12:
 
 ```bash
-git clone https://github.com/Adrianval96/evolutive-trading.git
-cd evolutive-trading
+git clone https://github.com/Adrianval96/strategy-arena.git
+cd strategy-arena
 python3.12 -m venv .venv.nosync
 .venv.nosync/bin/pip install -r requirements-dev.txt
 ```
@@ -44,14 +44,14 @@ Tests and checks:
 Start the service on the sample data and queue a run:
 
 ```bash
-EVOLUTIVE_BARS=examples/synthetic_bars.csv .venv.nosync/bin/uvicorn src.bootstrap:create_app --factory
+STRATEGY_ARENA_BARS=examples/synthetic_bars.csv .venv.nosync/bin/uvicorn src.bootstrap:create_app --factory
 ```
 
 ```bash
 curl -X POST localhost:8000/v1/runs -H 'content-type: application/json' -d '{"agents":[{"label":"trend","strategy":"ma-crossover"},{"strategy":"buy-and-hold"}],"market":{"symbols":["SYN01","SYN02","SYN03","SYN04"],"interval":"1d","start":"2026-09-01","end":"2026-09-30"},"initial_cash":100000,"cost_bps":5}'
 ```
 
-Every response is a `{ success, data, error, meta }` envelope with snake_case fields; invalid runs get a `400` with a readable message. Runs are stored in `data/runs.sqlite` (`EVOLUTIVE_DB` to change it).
+Every response is a `{ success, data, error, meta }` envelope with snake_case fields; invalid runs get a `400` with a readable message. Runs are stored in `data/runs.sqlite` (`STRATEGY_ARENA_DB` to change it).
 
 ### Sample data
 
@@ -66,7 +66,7 @@ Hexagonal: `src/domain` (the rules), `src/application` (use cases and ports), `s
 Kronos needs torch (about 1 GB) and the model code, which is a git submodule:
 
 ```bash
-git clone --recurse-submodules https://github.com/Adrianval96/evolutive-trading.git
+git clone --recurse-submodules https://github.com/Adrianval96/strategy-arena.git
 .venv.nosync/bin/pip install -r requirements.txt
 cp .env.example .env
 ```
@@ -94,7 +94,7 @@ set -a; . ./.env; set +a
 To run it daily, `crontab -e` with a local time that lands after 16:30 New York time on weekdays:
 
 ```
-30 23 * * 1-5 cd ~/Documents/projects/evolutive-trading && set -a && . ./.env && .venv.nosync/bin/python trader.py >> trader.log 2>&1
+30 23 * * 1-5 cd ~/Documents/projects/strategy-arena && set -a && . ./.env && .venv.nosync/bin/python trader.py >> trader.log 2>&1
 ```
 
 macOS blocks cron from reading `~/Documents` unless `/usr/sbin/cron` has Full Disk Access. The Mac must also be awake at that time.

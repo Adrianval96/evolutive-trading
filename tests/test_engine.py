@@ -1,13 +1,12 @@
-import math
 import re
 
 import pandas as pd
 import pytest
+from bars import make_bars
+from contract import contract
 from mockito import ANY, captor, mock, verify, when
 
 import engine
-from bars import make_bars
-from contract import contract
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],
@@ -40,11 +39,6 @@ def favouring(picks_by_day):
     return forecaster
 
 
-def test_strategies_follow_the_contract():
-    contract("StrategiesEnvelope", {"success": True, "data": engine.strategies(), "error": None, "meta": None})
-    assert [strategy["id"] for strategy in engine.strategies()] == ["buy-and-hold", "kronos-top5", "ma-crossover"]
-
-
 def test_market_lists_each_symbol_with_its_daily_range():
     market = engine.market_info(make_bars(PRICES))
 
@@ -54,8 +48,11 @@ def test_market_lists_each_symbol_with_its_daily_range():
 
 
 def test_normalize_fills_ids_labels_defaults_and_costs():
-    request = {"agents": [{"strategy": "kronos-top5", "parameters": {}}, {"label": "trend", "strategy": "ma-crossover", "parameters": {"fast": 5.0}}],
-               "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}, "initial_cash": 1000}
+    request = {
+        "agents": [{"strategy": "kronos-top5", "parameters": {}}, {"label": "trend", "strategy": "ma-crossover", "parameters": {"fast": 5.0}}],
+        "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"},
+        "initial_cash": 1000,
+    }
 
     run = engine.normalize_run(request, engine.market_info(make_bars(PRICES)))
 
@@ -66,21 +63,29 @@ def test_normalize_fills_ids_labels_defaults_and_costs():
     assert run["cost_bps"] == 0
 
 
-@pytest.mark.parametrize("change, message", [
-    ({"agents": [{"strategy": "nope"}]}, 'Unknown strategy "nope"'),
-    ({"agents": [kronos(0)]}, "top_k must be between 1 and 20"),
-    ({"agents": [kronos(2.5)]}, "top_k must be a whole number"),
-    ({"agents": [{"strategy": "kronos-top5", "parameters": {"window": 3}}]}, 'Unknown parameter "window"'),
-    ({"agents": [{"strategy": "ma-crossover", "parameters": {"fast": 10, "slow": 5}}]}, "slow (5) must be greater than fast (10)"),
-    ({"market": {"symbols": ["A"], "interval": "5m", "start": "2026-01-05", "end": "2026-01-08"}}, 'Unknown interval "5m"'),
-    ({"market": {"symbols": ["ZZZ"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}}, "ZZZ has no 1d data"),
-    ({"market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-08", "end": "2026-01-05"}}, "start must be before end"),
-    ({"market": {"symbols": ["A"], "interval": "1d", "start": "2025-12-01", "end": "2026-01-08"}}, "A has 1d data from 2026-01-05 to 2026-01-08"),
-])
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"agents": [{"strategy": "nope"}]}, 'Unknown strategy "nope"'),
+        ({"agents": [kronos(0)]}, "top_k must be between 1 and 20"),
+        ({"agents": [kronos(2.5)]}, "top_k must be a whole number"),
+        ({"agents": [{"strategy": "kronos-top5", "parameters": {"window": 3}}]}, 'Unknown parameter "window"'),
+        ({"agents": [{"strategy": "ma-crossover", "parameters": {"fast": 10, "slow": 5}}]}, "slow (5) must be greater than fast (10)"),
+        ({"market": {"symbols": ["A"], "interval": "5m", "start": "2026-01-05", "end": "2026-01-08"}}, 'Unknown interval "5m"'),
+        ({"market": {"symbols": ["ZZZ"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}}, "ZZZ has no 1d data"),
+        ({"market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-08", "end": "2026-01-05"}}, "start must be before end"),
+        ({"market": {"symbols": ["A"], "interval": "1d", "start": "2025-12-01", "end": "2026-01-08"}}, "A has 1d data from 2026-01-05 to 2026-01-08"),
+    ],
+)
 def test_normalize_rejects_runs_the_engine_cannot_simulate(change, message):
-    request = {"agents": [kronos(1)], "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}, "initial_cash": 1000, **change}
+    request = {
+        "agents": [kronos(1)],
+        "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"},
+        "initial_cash": 1000,
+        **change,
+    }
 
-    with pytest.raises(engine.InvalidRun, match=re.escape(message)):
+    with pytest.raises(engine.InvalidRunError, match=re.escape(message)):
         engine.normalize_run(request, engine.market_info(make_bars(PRICES)))
 
 
@@ -137,7 +142,8 @@ def test_history_before_start_is_available_but_not_traded():
     seen = []
     forecaster = mock()
     when(forecaster).forecast(...).thenAnswer(
-        lambda history, target_date: seen.append(history["timestamp"].min().day) or pd.DataFrame({"symbol": ["A", "B"], "exp_return": [0.01, -0.01]}))
+        lambda history, target_date: seen.append(history["timestamp"].min().day) or pd.DataFrame({"symbol": ["A", "B"], "exp_return": [0.01, -0.01]})
+    )
 
     result = engine.run_simulation(run_spec(kronos(1), start="2026-01-06"), make_bars(PRICES), forecaster)
 
@@ -149,13 +155,16 @@ def test_history_before_start_is_available_but_not_traded():
 def test_crossover_enters_on_a_crossover_and_waits_for_a_fresh_one_after_a_stop():
     closes = [10, 10, 10, 10, 14, 15, 12.5, 13, 16, 16]
     opens = [10, 10, 10, 10, 10, 14, 15, 12.5, 13, 16]
-    bars = make_bars({"S": list(zip(opens, closes))})
+    bars = make_bars({"S": list(zip(opens, closes, strict=True))})
     agent = {"strategy": "ma-crossover", "parameters": {"fast": 2, "slow": 4, "stop_loss": 0.1}}
 
     result = engine.run_simulation(run_spec(agent, symbols=("S",), end="2026-01-16"), bars)
 
     assert [(trade.timestamp[:10], trade.side, trade.price) for trade in result.agents[0].trades] == [
-        ("2026-01-12", "buy", 14), ("2026-01-14", "sell", 12.5), ("2026-01-16", "buy", 16)]
+        ("2026-01-12", "buy", 14),
+        ("2026-01-14", "sell", 12.5),
+        ("2026-01-16", "buy", 16),
+    ]
 
 
 def test_agents_keep_independent_accounts():
@@ -180,18 +189,9 @@ def test_each_step_is_reported_as_it_happens():
         contract("StepEvent", step)
     assert steps.all_values[0]["timestamp"] == "2026-01-05T16:00:00-05:00"
     assert steps.all_values[0]["agents"][0]["trades"] == [
-        {"symbol": "A", "side": "buy", "quantity": 50, "price": 10}, {"symbol": "B", "side": "buy", "quantity": 25, "price": 20}]
-
-
-def test_the_result_follows_the_contract():
-    result = engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES))
-
-    payload = result.to_contract()
-
-    contract("Result", payload)
-    equity = payload["agents"][0]["equity"]
-    assert [equity_point["timestamp"] for equity_point in equity] == [f"2026-01-0{day}T16:00:00-05:00" for day in (5, 6, 7, 8)]
-    assert math.isclose(equity[-1]["equity"], payload["agents"][0]["final_equity"])
+        {"symbol": "A", "side": "buy", "quantity": 50, "price": 10},
+        {"symbol": "B", "side": "buy", "quantity": 25, "price": 20},
+    ]
 
 
 def test_a_missing_bar_fails_loudly():

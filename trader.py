@@ -3,16 +3,47 @@ import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
-from engine import LOOKBACK, KronosForecaster, load_bars, market_info, normalize_run, run_simulation, top_picks
+from engine import (
+    LOOKBACK,
+    AgentSpec,
+    KronosForecaster,
+    MarketSelection,
+    RunRequest,
+    StepEvent,
+    available_dates,
+    load_bars,
+    normalize_run,
+    run_simulation,
+    top_picks,
+)
 
 ROOT = Path(__file__).parent
 
 WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V",
-    "UNH", "XOM", "LLY", "JNJ", "WMT", "PG", "MA", "HD", "COST", "NFLX",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "GOOGL",
+    "META",
+    "TSLA",
+    "AVGO",
+    "JPM",
+    "V",
+    "UNH",
+    "XOM",
+    "LLY",
+    "JNJ",
+    "WMT",
+    "PG",
+    "MA",
+    "HD",
+    "COST",
+    "NFLX",
 ]
 BENCHMARK = "SPY"
 TOP_K = 5
@@ -23,7 +54,7 @@ BAR_COLUMNS = ["symbol", "timestamp", "open", "high", "low", "close", "volume"]
 INITIAL_CASH = 100_000.0
 
 
-def alpaca_clients():
+def alpaca_clients() -> tuple[Any, Any]:
     from alpaca.data.historical import StockHistoricalDataClient
     from alpaca.trading.client import TradingClient
 
@@ -31,7 +62,7 @@ def alpaca_clients():
     return TradingClient(key, secret, paper=True), StockHistoricalDataClient(key, secret)
 
 
-def daily_bars(market_data_client, symbols, start, end=None):
+def daily_bars(market_data_client: Any, symbols: list[str], start: datetime, end: datetime | None = None) -> pd.DataFrame:
     from alpaca.data.enums import Adjustment, DataFeed
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
@@ -50,12 +81,12 @@ def daily_bars(market_data_client, symbols, start, end=None):
     return bars
 
 
-def rebalance(expected_returns, held, top_k):
+def rebalance(expected_returns: pd.Series, held: set[str], top_k: int) -> tuple[set[str], list[str], list[str]]:
     picks = top_picks(expected_returns, top_k)
     return picks, sorted(held - picks), sorted(picks - held)
 
 
-def trade():
+def trade() -> None:
     from alpaca.trading.enums import OrderSide, TimeInForce
     from alpaca.trading.requests import MarketOrderRequest
 
@@ -75,9 +106,7 @@ def trade():
         trading.close_position(symbol)
     notional = round(float(trading.get_account().equity) / TOP_K, 2)
     for symbol in to_buy:
-        trading.submit_order(
-            MarketOrderRequest(symbol=symbol, notional=notional, side=OrderSide.BUY, time_in_force=TimeInForce.DAY)
-        )
+        trading.submit_order(MarketOrderRequest(symbol=symbol, notional=notional, side=OrderSide.BUY, time_in_force=TimeInForce.DAY))
 
     log = forecasts.assign(
         run_at=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -90,39 +119,43 @@ def trade():
     print(f"\nTarget {target_date.date()} | close: {to_close or '-'} | buy ${notional} each: {to_buy or '-'}")
 
 
-def simulate(path, start, end, top_k, cost_bps):
+def simulate(path: Path, start: str | None, end: str | None, top_k: int, cost_bps: float) -> None:
     bars = load_bars(path)
     days = sorted(bars["timestamp"].unique())
-    run = normalize_run({
-        "agents": [{"label": "kronos", "strategy": "kronos-top5", "parameters": {"top_k": top_k}}],
-        "market": {"symbols": sorted(bars["symbol"].unique()), "interval": "1d",
-                   "start": start or pd.Timestamp(days[min(LOOKBACK, len(days) - 2)]).strftime("%Y-%m-%d"),
-                   "end": end or pd.Timestamp(days[-1]).strftime("%Y-%m-%d")},
-        "initial_cash": INITIAL_CASH,
-        "cost_bps": cost_bps,
-    }, market_info(bars))
+    request = RunRequest(
+        agents=(AgentSpec("kronos-top5", "kronos", {"top_k": top_k}),),
+        market=MarketSelection(
+            symbols=tuple(sorted(bars["symbol"].unique())),
+            interval="1d",
+            start=start or pd.Timestamp(days[min(LOOKBACK, len(days) - 2)]).strftime("%Y-%m-%d"),
+            end=end or pd.Timestamp(days[-1]).strftime("%Y-%m-%d"),
+        ),
+        initial_cash=INITIAL_CASH,
+        cost_bps=cost_bps,
+    )
+    run = normalize_run(request, available_dates(bars))
 
-    def print_step(step):
-        agent = step["agents"][0]
-        sides = {side: [executed_trade["symbol"] for executed_trade in agent["trades"] if executed_trade["side"] == side] for side in ("sell", "buy")}
-        print(f"{step['timestamp'][:10]} equity {agent['equity']:,.2f} | at next open, close: {sides['sell'] or '-'} | buy: {sides['buy'] or '-'}")
+    def print_step(step: StepEvent) -> None:
+        agent = step.agents[0]
+        sides = {side: [trade.symbol for trade in agent.trades if trade.side == side] for side in ("sell", "buy")}
+        print(f"{step.timestamp[:10]} equity {agent.equity:,.2f} | at next open, close: {sides['sell'] or '-'} | buy: {sides['buy'] or '-'}")
 
     result = run_simulation(run, bars, KronosForecaster(), on_step=print_step).agents[0]
     print(f"\n{INITIAL_CASH:,.2f} -> {result.final_equity:,.2f} ({result.total_return:+.2%})")
 
 
-def fetch(start, end, path):
+def fetch(start: datetime, end: datetime, path: Path) -> None:
     _, market_data_client = alpaca_clients()
     path.parent.mkdir(parents=True, exist_ok=True)
     daily_bars(market_data_client, WATCHLIST, start, end)[BAR_COLUMNS].to_csv(path, index=False)
     print(f"Saved {path}")
 
 
-def percentage_change(series):
+def percentage_change(series: pd.Series) -> str:
     return f"{series.iloc[-1] / series.iloc[0] - 1:+.2%}"
 
 
-def report():
+def report() -> None:
     from alpaca.trading.requests import GetPortfolioHistoryRequest
 
     trading, market_data_client = alpaca_clients()
@@ -133,11 +166,11 @@ def report():
     print(f"Since {equity.index[0].date()}: strategy {percentage_change(equity)} | {BENCHMARK} {percentage_change(benchmark)}")
 
 
-def utc_date(text):
+def utc_date(text: str) -> datetime:
     return datetime.fromisoformat(text).replace(tzinfo=UTC)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Kronos daily paper trader. With no command, it trades the paper account.")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("report", help="compare the paper account with SPY")

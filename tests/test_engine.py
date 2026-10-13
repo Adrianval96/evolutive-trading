@@ -1,13 +1,14 @@
-import math
+import json
 import re
+from dataclasses import asdict, replace
 
 import pandas as pd
 import pytest
+from bars import make_bars
+from contract import contract
 from mockito import ANY, captor, mock, verify, when
 
 import engine
-from bars import make_bars
-from contract import contract
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],
@@ -15,17 +16,28 @@ PRICES = {
 }
 
 
+AVAILABLE = engine.available_dates(make_bars(PRICES))
+
+
+def market(symbols=("A",), interval="1d", start="2026-01-05", end="2026-01-08"):
+    return engine.MarketSelection(tuple(symbols), interval, start, end)
+
+
+def request(*agents, selection=None, initial_cash=1000, cost_bps=0):
+    return engine.RunRequest(tuple(agents), selection or market(), initial_cash, cost_bps)
+
+
 def run_spec(*agents, symbols=("A", "B"), start="2026-01-05", end="2026-01-08", initial_cash=1000, cost_bps=0):
-    return {
-        "agents": [{"id": f"agt_{index + 1}", "label": agent_spec["strategy"], **agent_spec} for index, agent_spec in enumerate(agents)],
-        "market": {"symbols": list(symbols), "interval": "1d", "start": start, "end": end},
-        "initial_cash": initial_cash,
-        "cost_bps": cost_bps,
-    }
+    configured = tuple(engine.Agent(f"agt_{index + 1}", spec.strategy, spec.strategy, spec.parameters) for index, spec in enumerate(agents))
+    return engine.Run(configured, market(symbols, start=start, end=end), initial_cash, cost_bps)
 
 
 def kronos(top_k):
-    return {"strategy": "kronos-top5", "parameters": {"top_k": top_k}}
+    return engine.AgentSpec("kronos-top5", parameters={"top_k": top_k})
+
+
+def buy_and_hold():
+    return engine.AgentSpec("buy-and-hold")
 
 
 def favouring(picks_by_day):
@@ -40,52 +52,44 @@ def favouring(picks_by_day):
     return forecaster
 
 
-def test_strategies_follow_the_contract():
-    contract("StrategiesEnvelope", {"success": True, "data": engine.strategies(), "error": None, "meta": None})
-    assert [strategy["id"] for strategy in engine.strategies()] == ["buy-and-hold", "kronos-top5", "ma-crossover"]
-
-
-def test_market_lists_each_symbol_with_its_daily_range():
-    market = engine.market_info(make_bars(PRICES))
-
-    contract("Market", market)
-    assert market["intervals"] == [{"id": "1d", "label": "Daily", "max_range_days": None}]
-    assert market["symbols"][0] == {"symbol": "A", "name": "A", "available": {"1d": {"from": "2026-01-05", "to": "2026-01-08"}}}
+def test_available_dates_lists_each_symbols_first_and_last_day():
+    assert engine.available_dates(make_bars(PRICES)) == {"A": ("2026-01-05", "2026-01-08"), "B": ("2026-01-05", "2026-01-08")}
 
 
 def test_normalize_fills_ids_labels_defaults_and_costs():
-    request = {"agents": [{"strategy": "kronos-top5", "parameters": {}}, {"label": "trend", "strategy": "ma-crossover", "parameters": {"fast": 5.0}}],
-               "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}, "initial_cash": 1000}
+    run = engine.normalize_run(
+        request(engine.AgentSpec("kronos-top5"), engine.AgentSpec("ma-crossover", "trend", {"fast": 5.0})),
+        AVAILABLE,
+    )
 
-    run = engine.normalize_run(request, engine.market_info(make_bars(PRICES)))
-
-    assert run["agents"] == [
-        {"id": "agt_1", "label": "kronos-top5", "strategy": "kronos-top5", "parameters": {"top_k": 5}},
-        {"id": "agt_2", "label": "trend", "strategy": "ma-crossover", "parameters": {"fast": 5, "slow": 50, "stop_loss": 0.05}},
-    ]
-    assert run["cost_bps"] == 0
+    assert run.agents == (
+        engine.Agent("agt_1", "kronos-top5", "kronos-top5", {"top_k": 5}),
+        engine.Agent("agt_2", "trend", "ma-crossover", {"fast": 5, "slow": 50, "stop_loss": 0.05}),
+    )
+    assert run.cost_bps == 0
 
 
-@pytest.mark.parametrize("change, message", [
-    ({"agents": [{"strategy": "nope"}]}, 'Unknown strategy "nope"'),
-    ({"agents": [kronos(0)]}, "top_k must be between 1 and 20"),
-    ({"agents": [kronos(2.5)]}, "top_k must be a whole number"),
-    ({"agents": [{"strategy": "kronos-top5", "parameters": {"window": 3}}]}, 'Unknown parameter "window"'),
-    ({"agents": [{"strategy": "ma-crossover", "parameters": {"fast": 10, "slow": 5}}]}, "slow (5) must be greater than fast (10)"),
-    ({"market": {"symbols": ["A"], "interval": "5m", "start": "2026-01-05", "end": "2026-01-08"}}, 'Unknown interval "5m"'),
-    ({"market": {"symbols": ["ZZZ"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}}, "ZZZ has no 1d data"),
-    ({"market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-08", "end": "2026-01-05"}}, "start must be before end"),
-    ({"market": {"symbols": ["A"], "interval": "1d", "start": "2025-12-01", "end": "2026-01-08"}}, "A has 1d data from 2026-01-05 to 2026-01-08"),
-])
-def test_normalize_rejects_runs_the_engine_cannot_simulate(change, message):
-    request = {"agents": [kronos(1)], "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}, "initial_cash": 1000, **change}
-
-    with pytest.raises(engine.InvalidRun, match=re.escape(message)):
-        engine.normalize_run(request, engine.market_info(make_bars(PRICES)))
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"agents": (engine.AgentSpec("unknown-strategy"),)}, 'Unknown strategy "unknown-strategy"'),
+        ({"agents": (kronos(0),)}, "top_k must be between 1 and 20"),
+        ({"agents": (kronos(2.5),)}, "top_k must be a whole number"),
+        ({"agents": (engine.AgentSpec("kronos-top5", parameters={"window": 3}),)}, 'Unknown parameter "window"'),
+        ({"agents": (engine.AgentSpec("ma-crossover", parameters={"fast": 10, "slow": 5}),)}, "slow (5) must be greater than fast (10)"),
+        ({"market": market(interval="5m")}, 'Unknown interval "5m"'),
+        ({"market": market(symbols=("UNLISTED",))}, "UNLISTED has no 1d data"),
+        ({"market": market(start="2026-01-08", end="2026-01-05")}, "start must be before end"),
+        ({"market": market(start="2025-12-01")}, "A has 1d data from 2026-01-05 to 2026-01-08"),
+    ],
+)
+def test_normalize_rejects_runs_the_engine_cannot_simulate(changes, message):
+    with pytest.raises(engine.InvalidRunError, match=re.escape(message)):
+        engine.normalize_run(replace(request(kronos(1)), **changes), AVAILABLE)
 
 
 def test_buy_and_hold_buys_every_symbol_once_and_never_trades_again():
-    result = engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES))
+    result = engine.run_simulation(run_spec(buy_and_hold()), make_bars(PRICES))
 
     agent = result.agents[0]
     assert [(trade.symbol, trade.side, trade.quantity, trade.price) for trade in agent.trades] == [("A", "buy", 50, 10), ("B", "buy", 25, 20)]
@@ -137,7 +141,8 @@ def test_history_before_start_is_available_but_not_traded():
     seen = []
     forecaster = mock()
     when(forecaster).forecast(...).thenAnswer(
-        lambda history, target_date: seen.append(history["timestamp"].min().day) or pd.DataFrame({"symbol": ["A", "B"], "exp_return": [0.01, -0.01]}))
+        lambda history, target_date: seen.append(history["timestamp"].min().day) or pd.DataFrame({"symbol": ["A", "B"], "exp_return": [0.01, -0.01]})
+    )
 
     result = engine.run_simulation(run_spec(kronos(1), start="2026-01-06"), make_bars(PRICES), forecaster)
 
@@ -149,17 +154,20 @@ def test_history_before_start_is_available_but_not_traded():
 def test_crossover_enters_on_a_crossover_and_waits_for_a_fresh_one_after_a_stop():
     closes = [10, 10, 10, 10, 14, 15, 12.5, 13, 16, 16]
     opens = [10, 10, 10, 10, 10, 14, 15, 12.5, 13, 16]
-    bars = make_bars({"S": list(zip(opens, closes))})
-    agent = {"strategy": "ma-crossover", "parameters": {"fast": 2, "slow": 4, "stop_loss": 0.1}}
+    bars = make_bars({"S": list(zip(opens, closes, strict=True))})
+    agent = engine.AgentSpec("ma-crossover", parameters={"fast": 2, "slow": 4, "stop_loss": 0.1})
 
     result = engine.run_simulation(run_spec(agent, symbols=("S",), end="2026-01-16"), bars)
 
     assert [(trade.timestamp[:10], trade.side, trade.price) for trade in result.agents[0].trades] == [
-        ("2026-01-12", "buy", 14), ("2026-01-14", "sell", 12.5), ("2026-01-16", "buy", 16)]
+        ("2026-01-12", "buy", 14),
+        ("2026-01-14", "sell", 12.5),
+        ("2026-01-16", "buy", 16),
+    ]
 
 
 def test_agents_keep_independent_accounts():
-    hold = {"strategy": "buy-and-hold", "parameters": {}}
+    hold = buy_and_hold()
     forecaster = favouring({"2026-01-05": "B", "2026-01-06": "A", "2026-01-07": "B"})
 
     alone = engine.run_simulation(run_spec(hold), make_bars(PRICES))
@@ -172,33 +180,24 @@ def test_agents_keep_independent_accounts():
 def test_each_step_is_reported_as_it_happens():
     progress = mock()
 
-    engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES), on_step=progress.step)
+    engine.run_simulation(run_spec(buy_and_hold()), make_bars(PRICES), on_step=progress.step)
 
     steps = captor()
     verify(progress, times=3).step(steps)
     for step in steps.all_values:
-        contract("StepEvent", step)
-    assert steps.all_values[0]["timestamp"] == "2026-01-05T16:00:00-05:00"
-    assert steps.all_values[0]["agents"][0]["trades"] == [
-        {"symbol": "A", "side": "buy", "quantity": 50, "price": 10}, {"symbol": "B", "side": "buy", "quantity": 25, "price": 20}]
-
-
-def test_the_result_follows_the_contract():
-    result = engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES))
-
-    payload = result.to_contract()
-
-    contract("Result", payload)
-    equity = payload["agents"][0]["equity"]
-    assert [equity_point["timestamp"] for equity_point in equity] == [f"2026-01-0{day}T16:00:00-05:00" for day in (5, 6, 7, 8)]
-    assert math.isclose(equity[-1]["equity"], payload["agents"][0]["final_equity"])
+        contract("StepEvent", json.loads(json.dumps(asdict(step), default=float)))
+    assert steps.all_values[0].timestamp == "2026-01-05T16:00:00-05:00"
+    assert steps.all_values[0].agents[0].trades == (
+        engine.StepTrade("A", "buy", 50, 10),
+        engine.StepTrade("B", "buy", 25, 20),
+    )
 
 
 def test_a_missing_bar_fails_loudly():
     bars = make_bars(PRICES).drop(index=5)
 
     with pytest.raises(ValueError, match=r"missing bars for \['B'\]"):
-        engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), bars)
+        engine.run_simulation(run_spec(buy_and_hold()), bars)
 
 
 def test_the_kronos_forecaster_feeds_each_symbols_recent_history_and_returns_expected_returns():

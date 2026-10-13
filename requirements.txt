@@ -1,0 +1,2 @@
+-r vendor/Kronos/requirements.txt
+alpaca-py==0.44.0

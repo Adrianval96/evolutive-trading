@@ -1,0 +1,4 @@
+.env
+.venv.nosync/
+__pycache__/
+*.log

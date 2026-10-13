@@ -44,14 +44,14 @@ Tests and checks:
 Start the service on the sample data and queue a run:
 
 ```bash
-STRATEGY_ARENA_BARS=examples/synthetic_bars.csv .venv.nosync/bin/uvicorn src.bootstrap:create_app --factory
+BARS_PATH=examples/synthetic_bars.csv .venv.nosync/bin/uvicorn src.bootstrap:create_app --factory
 ```
 
 ```bash
 curl -X POST localhost:8000/v1/runs -H 'content-type: application/json' -d '{"agents":[{"label":"trend","strategy":"ma-crossover"},{"strategy":"buy-and-hold"}],"market":{"symbols":["SYN01","SYN02","SYN03","SYN04"],"interval":"1d","start":"2026-09-01","end":"2026-09-30"},"initial_cash":100000,"cost_bps":5}'
 ```
 
-Every response is a `{ success, data, error, meta }` envelope with snake_case fields; invalid runs get a `400` with a readable message. Runs are stored in `data/runs.sqlite` (`STRATEGY_ARENA_DB` to change it).
+Every response is a `{ success, data, error, meta }` envelope with snake_case fields; invalid runs get a `400` with a readable message. Runs are stored in `data/runs.sqlite` (`DB_PATH` to change it).
 
 ### Sample data
 

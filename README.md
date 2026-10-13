@@ -53,11 +53,23 @@ Compare against SPY:
 .venv.nosync/bin/python trader.py report
 ```
 
-Test the rebalance logic:
+Run the tests (no torch or Alpaca needed):
 
 ```bash
 .venv.nosync/bin/python test_trader.py
 ```
+
+## Simulate over past days
+
+The same decision logic, replayed day by day: on each day's close the strategy sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized, as in the live loop.
+
+```bash
+set -a; . ./.env; set +a
+.venv.nosync/bin/python trader.py fetch 2023-01-01 2026-10-01 data/bars.csv
+.venv.nosync/bin/python trader.py simulate data/bars.csv
+```
+
+`data/` is git-ignored: market data terms don't allow publishing the bars. The first 512 days are history only; change that with `--warmup`. Kronos was trained on past prices, so a simulation over its training period says nothing about whether it works.
 
 ## Schedule
 

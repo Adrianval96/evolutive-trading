@@ -2,9 +2,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from evolutive_trading.application.ports import RunRepository
-from evolutive_trading.domain.model import Run, RunRequest
-from evolutive_trading.domain.validation import normalize_run
+from ..domain.model import Run, RunRequest
+from ..domain.validation import normalize_run
+from .ports import RunRepository
 
 
 @dataclass(frozen=True)

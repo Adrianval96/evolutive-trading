@@ -4,8 +4,8 @@ from typing import Protocol
 
 import pandas as pd
 
-from evolutive_trading.domain.catalog import STRATEGY_PARAMETERS
-from evolutive_trading.domain.model import Position
+from .catalog import STRATEGY_PARAMETERS
+from .model import Position
 
 
 @dataclass(frozen=True)

@@ -6,8 +6,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from evolutive_trading.application.queue_run import QueueRun
-from evolutive_trading.domain import model
+from ...application.queue_run import QueueRun
+from ...domain import model
 
 
 class AgentSpec(BaseModel):

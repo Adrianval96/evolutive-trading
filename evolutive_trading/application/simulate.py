@@ -4,8 +4,7 @@ from datetime import timedelta
 
 import pandas as pd
 
-from evolutive_trading.application.ports import Forecaster
-from evolutive_trading.domain.model import (
+from ..domain.model import (
     Account,
     AgentResult,
     AgentStep,
@@ -17,7 +16,8 @@ from evolutive_trading.domain.model import (
     StepTrade,
     Trade,
 )
-from evolutive_trading.domain.strategies import STRATEGIES, DecisionContext
+from ..domain.strategies import STRATEGIES, DecisionContext
+from .ports import Forecaster
 
 EXCHANGE_TZ = "America/New_York"
 MARKET_OPEN = timedelta(hours=9, minutes=30)

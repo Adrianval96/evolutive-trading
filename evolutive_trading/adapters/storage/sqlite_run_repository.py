@@ -4,7 +4,7 @@ from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
 
-from evolutive_trading.domain.model import Run
+from ...domain.model import Run
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,

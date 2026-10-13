@@ -1,5 +1,5 @@
-from evolutive_trading.domain.catalog import STRATEGY_PARAMETERS
-from evolutive_trading.domain.model import Agent, AgentSpec, InvalidRunError, MarketSelection, Run, RunRequest
+from .catalog import STRATEGY_PARAMETERS
+from .model import Agent, AgentSpec, InvalidRunError, MarketSelection, Run, RunRequest
 
 INTERVAL = "1d"
 

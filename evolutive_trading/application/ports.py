@@ -2,7 +2,7 @@ from typing import Protocol
 
 import pandas as pd
 
-from evolutive_trading.domain.model import Run
+from ..domain.model import Run
 
 
 class Forecaster(Protocol):

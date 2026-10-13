@@ -13,8 +13,34 @@ ignore = ["ANN401"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["engine.py", "service.py", "trader.py"]  # tests are linted by ruff, not type-checked
+files = ["evolutive_trading", "trader.py"]  # tests are linted by ruff, not type-checked
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "yaml", "jsonschema.*", "mockito.*", "model", "alpaca.*"]
+module = ["pandas.*", "yaml", "jsonschema.*", "model", "alpaca.*"]
 ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "evolutive_trading"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers only depend inward"
+type = "layers"
+layers = ["evolutive_trading.bootstrap", "evolutive_trading.adapters", "evolutive_trading.application", "evolutive_trading.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Domain and application stay free of frameworks and I/O"
+type = "forbidden"
+source_modules = ["evolutive_trading.domain", "evolutive_trading.application"]
+forbidden_modules = ["fastapi", "pydantic", "uvicorn", "sqlite3", "alpaca", "torch"]
+
+[[tool.importlinter.contracts]]
+name = "The domain model and validation do not use pandas"
+type = "forbidden"
+source_modules = ["evolutive_trading.domain.model", "evolutive_trading.domain.validation"]
+forbidden_modules = ["pandas"]
+
+[[tool.importlinter.contracts]]
+name = "Inbound and outbound adapters do not know each other"
+type = "independence"
+modules = ["evolutive_trading.adapters.inbound", "evolutive_trading.adapters.outbound"]

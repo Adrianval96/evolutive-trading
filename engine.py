@@ -1,10 +1,10 @@
 import functools
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import NotRequired, Protocol, TypedDict, cast
+from typing import Any, Protocol
 
 import pandas as pd
 
@@ -12,6 +12,7 @@ ROOT = Path(__file__).parent
 EXCHANGE_TZ = "America/New_York"
 MARKET_OPEN = timedelta(hours=9, minutes=30)
 MARKET_CLOSE = timedelta(hours=16)
+INTERVAL = "1d"
 LOOKBACK = 512
 SAMPLE_COUNT = 20
 MODEL = "NeoQuasar/Kronos-small"
@@ -22,85 +23,47 @@ class InvalidRunError(ValueError):
     pass
 
 
-# Shapes of the run as it travels through the engine. They mirror openapi.yaml.
-class AgentRequest(TypedDict):
+@dataclass(frozen=True)
+class AgentSpec:
     strategy: str
-    label: NotRequired[str | None]
-    parameters: NotRequired[dict[str, float] | None]
+    label: str | None = None
+    parameters: dict[str, float] = field(default_factory=dict)
 
 
-class MarketSelection(TypedDict):
-    symbols: list[str]
+@dataclass(frozen=True)
+class MarketSelection:
+    symbols: tuple[str, ...]
     interval: str
     start: str
     end: str
 
 
-class RunRequest(TypedDict):
-    agents: list[AgentRequest]
+@dataclass(frozen=True)
+class RunRequest:
+    agents: tuple[AgentSpec, ...]
     market: MarketSelection
     initial_cash: float
-    cost_bps: NotRequired[float]
+    cost_bps: float = 0
 
 
-class AgentConfig(TypedDict):
+@dataclass(frozen=True)
+class Agent:
     id: str
     label: str
     strategy: str
     parameters: dict[str, float]
 
 
-class Run(TypedDict):
-    agents: list[AgentConfig]
+@dataclass(frozen=True)
+class Run:
+    agents: tuple[Agent, ...]
     market: MarketSelection
     initial_cash: float
     cost_bps: float
 
 
-class IntervalInfo(TypedDict):
-    id: str
-    label: str
-    max_range_days: int | None
-
-
-DateSpan = TypedDict("DateSpan", {"from": str, "to": str})
-
-
-class SymbolInfo(TypedDict):
-    symbol: str
-    name: str
-    available: dict[str, DateSpan]
-
-
-class Market(TypedDict):
-    intervals: list[IntervalInfo]
-    symbols: list[SymbolInfo]
-
-
-class StepTrade(TypedDict):
-    symbol: str
-    side: str
-    quantity: float
-    price: float
-
-
-class AgentStep(TypedDict):
-    agent_id: str
-    equity: float
-    trades: list[StepTrade]
-
-
-class StepEvent(TypedDict):
-    timestamp: str
-    agents: list[AgentStep]
-
-
-INTERVALS: tuple[IntervalInfo, ...] = ({"id": "1d", "label": "Daily", "max_range_days": None},)
-
-
 @dataclass(frozen=True)
 class Parameter:
-    # Field names mirror the openapi.yaml `Parameter` schema.
     name: str
     type: str
     default: float
@@ -137,6 +100,28 @@ class SimulationResult:
     agents: tuple[AgentResult, ...]
 
 
+# What on_step receives. Field names follow the StepEvent schema in openapi.yaml.
+@dataclass(frozen=True)
+class StepTrade:
+    symbol: str
+    side: str
+    quantity: float
+    price: float
+
+
+@dataclass(frozen=True)
+class AgentStep:
+    agent_id: str
+    equity: float
+    trades: tuple[StepTrade, ...]
+
+
+@dataclass(frozen=True)
+class StepEvent:
+    timestamp: str
+    agents: tuple[AgentStep, ...]
+
+
 @dataclass(frozen=True)
 class Position:
     shares: float
@@ -162,19 +147,6 @@ class DecisionContext:
 
 class Forecaster(Protocol):
     def forecast(self, bars: pd.DataFrame, target_date: pd.Timestamp) -> pd.DataFrame: ...
-
-
-class Predictor(Protocol):
-    def predict_batch(
-        self,
-        *,
-        df_list: list[pd.DataFrame],
-        x_timestamp_list: list[pd.Series],
-        y_timestamp_list: list[pd.Series],
-        pred_len: int,
-        sample_count: int,
-        verbose: bool,
-    ) -> list[pd.DataFrame]: ...
 
 
 class StrategyBehaviour(Protocol):
@@ -230,8 +202,6 @@ class MovingAverageCrossover:
 @dataclass(frozen=True)
 class Strategy:
     id: str
-    name: str
-    description: str
     parameters: tuple[Parameter, ...]
     behaviour_class: Callable[[dict[str, float]], StrategyBehaviour]
 
@@ -239,18 +209,10 @@ class Strategy:
 STRATEGIES = {
     strategy.id: strategy
     for strategy in (
-        Strategy("buy-and-hold", "Buy and hold", "Buys every symbol in equal weight on the first day and never trades again.", (), BuyAndHold),
-        Strategy(
-            "kronos-top5",
-            "Kronos top picks",
-            "Holds, in equal weight, the symbols with the best positive Kronos forecast for the next close.",
-            (Parameter("top_k", "integer", 5, 1, 20),),
-            KronosTopPicks,
-        ),
+        Strategy("buy-and-hold", (), BuyAndHold),
+        Strategy("kronos-top5", (Parameter("top_k", "integer", 5, 1, 20),), KronosTopPicks),
         Strategy(
             "ma-crossover",
-            "Moving-average crossover",
-            "Holds a symbol while the fast average of its closes is above the slow one. After a stop-loss exit it waits for a fresh crossover.",
             (Parameter("fast", "integer", 10, 2, 100), Parameter("slow", "integer", 50, 5, 250), Parameter("stop_loss", "number", 0.05, 0, 0.5)),
             MovingAverageCrossover,
         ),
@@ -262,33 +224,23 @@ def load_bars(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, parse_dates=["timestamp"])
 
 
-def market_info(bars: pd.DataFrame) -> Market:
+def available_dates(bars: pd.DataFrame) -> dict[str, tuple[str, str]]:
+    """First and last day with bars, per symbol."""
     spans = bars.groupby("symbol")["timestamp"].agg(["min", "max"])
-    return {
-        "intervals": [interval.copy() for interval in INTERVALS],
-        "symbols": [
-            {
-                "symbol": symbol,
-                "name": symbol,
-                "available": {"1d": {"from": span["min"].strftime("%Y-%m-%d"), "to": span["max"].strftime("%Y-%m-%d")}},
-            }
-            for symbol, span in spans.iterrows()
-        ],
-    }
+    return {symbol: (span["min"].strftime("%Y-%m-%d"), span["max"].strftime("%Y-%m-%d")) for symbol, span in spans.iterrows()}
 
 
-def normalize_agent(index: int, agent: AgentRequest) -> AgentConfig:
-    strategy = STRATEGIES.get(agent["strategy"])
+def normalize_agent(index: int, spec: AgentSpec) -> Agent:
+    strategy = STRATEGIES.get(spec.strategy)
     if strategy is None:
-        raise InvalidRunError(f'Unknown strategy "{agent["strategy"]}".')
-    label = agent.get("label") or strategy.id
-    given_parameters = agent.get("parameters") or {}
-    unknown_names = sorted(set(given_parameters) - {parameter.name for parameter in strategy.parameters})
+        raise InvalidRunError(f'Unknown strategy "{spec.strategy}".')
+    label = spec.label or strategy.id
+    unknown_names = sorted(set(spec.parameters) - {parameter.name for parameter in strategy.parameters})
     if unknown_names:
         raise InvalidRunError(f'{label}: Unknown parameter "{unknown_names[0]}" for {strategy.id}.')
     parameters: dict[str, float] = {}
     for parameter in strategy.parameters:
-        value = given_parameters.get(parameter.name, parameter.default)
+        value = spec.parameters.get(parameter.name, parameter.default)
         if parameter.type == "integer":
             if value != int(value):
                 raise InvalidRunError(f"{label}: {parameter.name} must be a whole number, got {value}.")
@@ -298,29 +250,26 @@ def normalize_agent(index: int, agent: AgentRequest) -> AgentConfig:
         parameters[parameter.name] = value
     if strategy.id == "ma-crossover" and parameters["slow"] <= parameters["fast"]:
         raise InvalidRunError(f"{label}: slow ({parameters['slow']}) must be greater than fast ({parameters['fast']}).")
-    return {"id": f"agt_{index + 1}", "label": label, "strategy": strategy.id, "parameters": parameters}
+    return Agent(f"agt_{index + 1}", label, strategy.id, parameters)
 
 
-def check_market(selection: MarketSelection, market: Market) -> None:
-    interval = selection["interval"]
-    if interval not in {known_interval["id"] for known_interval in market["intervals"]}:
-        raise InvalidRunError(f'Unknown interval "{interval}".')
-    if selection["start"] >= selection["end"]:
+def check_market(selection: MarketSelection, available: dict[str, tuple[str, str]]) -> None:
+    if selection.interval != INTERVAL:
+        raise InvalidRunError(f'Unknown interval "{selection.interval}".')
+    if selection.start >= selection.end:
         raise InvalidRunError("start must be before end.")
-    availability_by_symbol = {symbol_info["symbol"]: symbol_info["available"] for symbol_info in market["symbols"]}
-    for symbol in selection["symbols"]:
-        span = availability_by_symbol.get(symbol, {}).get(interval)
-        if span is None:
-            raise InvalidRunError(f"{symbol} has no {interval} data.")
-        if selection["start"] < span["from"] or selection["end"] > span["to"]:
-            raise InvalidRunError(f"{symbol} has {interval} data from {span['from']} to {span['to']} only.")
+    for symbol in selection.symbols:
+        if symbol not in available:
+            raise InvalidRunError(f"{symbol} has no {INTERVAL} data.")
+        first, last = available[symbol]
+        if selection.start < first or selection.end > last:
+            raise InvalidRunError(f"{symbol} has {INTERVAL} data from {first} to {last} only.")
 
 
-def normalize_run(request: RunRequest, market: Market) -> Run:
-    agents = [normalize_agent(index, agent) for index, agent in enumerate(request["agents"])]
-    selection = request["market"]
-    check_market(selection, market)
-    return {"agents": agents, "market": selection, "initial_cash": request["initial_cash"], "cost_bps": request.get("cost_bps", 0)}
+def normalize_run(request: RunRequest, available: dict[str, tuple[str, str]]) -> Run:
+    agents = tuple(normalize_agent(index, spec) for index, spec in enumerate(request.agents))
+    check_market(request.market, available)
+    return Run(agents, request.market, request.initial_cash, request.cost_bps)
 
 
 def exchange_timestamp(day: pd.Timestamp, time_of_day: timedelta) -> str:
@@ -354,9 +303,9 @@ def run_simulation(
     forecaster: Forecaster | None = None,
     on_step: Callable[[StepEvent], None] | None = None,
 ) -> SimulationResult:
-    selection = run["market"]
-    symbols = tuple(sorted(selection["symbols"]))
-    symbol_bars = bars[bars["symbol"].isin(symbols) & (bars["timestamp"] <= pd.Timestamp(selection["end"]))]
+    selection = run.market
+    symbols = tuple(sorted(selection.symbols))
+    symbol_bars = bars[bars["symbol"].isin(symbols) & (bars["timestamp"] <= pd.Timestamp(selection.end))]
     open_prices = symbol_bars.pivot(index="timestamp", columns="symbol", values="open")
     close_prices = symbol_bars.pivot(index="timestamp", columns="symbol", values="close")
     missing_symbols = sorted(
@@ -367,52 +316,46 @@ def run_simulation(
     if missing_symbols:
         raise ValueError(f"Every symbol needs a bar on every day; missing bars for {missing_symbols}.")
     trading_days = close_prices.index
-    step_indexes = range(trading_days.searchsorted(pd.Timestamp(selection["start"])), len(trading_days) - 1)
+    step_indexes = range(trading_days.searchsorted(pd.Timestamp(selection.start)), len(trading_days) - 1)
     if not len(step_indexes):
         raise ValueError("The range needs at least two trading days from its start.")
 
-    cost_rate = run["cost_bps"] / 1e4
-    agent_behaviours = [(agent, STRATEGIES[agent["strategy"]].behaviour_class(agent["parameters"])) for agent in run["agents"]]
-    accounts_by_agent_id = {agent["id"]: Account(run["initial_cash"], {}) for agent, _ in agent_behaviours}
-    equity_curves_by_agent_id: dict[str, list[EquityPoint]] = {agent["id"]: [] for agent, _ in agent_behaviours}
-    trades_by_agent_id: dict[str, list[Trade]] = {agent["id"]: [] for agent, _ in agent_behaviours}
+    def expected_returns(history: pd.DataFrame, target_date: pd.Timestamp) -> pd.Series:
+        if forecaster is None:
+            raise ValueError("This run needs a forecaster.")
+        return forecaster.forecast(history, target_date).set_index("symbol")["exp_return"]
+
+    cost_rate = run.cost_bps / 1e4
+    agent_behaviours = [(agent, STRATEGIES[agent.strategy].behaviour_class(agent.parameters)) for agent in run.agents]
+    accounts_by_agent_id = {agent.id: Account(run.initial_cash, {}) for agent, _ in agent_behaviours}
+    equity_curves_by_agent_id: dict[str, list[EquityPoint]] = {agent.id: [] for agent, _ in agent_behaviours}
+    trades_by_agent_id: dict[str, list[Trade]] = {agent.id: [] for agent, _ in agent_behaviours}
 
     for step_index in step_indexes:
         today, tomorrow = trading_days[step_index], trading_days[step_index + 1]
-        history = symbol_bars[symbol_bars["timestamp"] <= today]
-
-        @functools.cache
-        def forecast(history: pd.DataFrame = history, tomorrow: pd.Timestamp = tomorrow) -> pd.Series:
-            if forecaster is None:
-                raise ValueError("This run needs a forecaster.")
-            return forecaster.forecast(history, tomorrow).set_index("symbol")["exp_return"]
-
+        forecast = functools.cache(functools.partial(expected_returns, symbol_bars[symbol_bars["timestamp"] <= today], tomorrow))
         step_reports: list[AgentStep] = []
         for agent, behaviour in agent_behaviours:
-            account = accounts_by_agent_id[agent["id"]]
+            account = accounts_by_agent_id[agent.id]
             equity = account.value(close_prices.loc[today])
             target_weights = behaviour.decide(DecisionContext(symbols, close_prices.loc[:today], account.positions, forecast))
-            accounts_by_agent_id[agent["id"]], trades = execute_trades(
+            accounts_by_agent_id[agent.id], trades = execute_trades(
                 account, target_weights, equity, open_prices.loc[tomorrow], cost_rate, exchange_timestamp(tomorrow, MARKET_OPEN)
             )
-            equity_curves_by_agent_id[agent["id"]].append(EquityPoint(exchange_timestamp(today, MARKET_CLOSE), equity))
-            trades_by_agent_id[agent["id"]].extend(trades)
+            equity_curves_by_agent_id[agent.id].append(EquityPoint(exchange_timestamp(today, MARKET_CLOSE), equity))
+            trades_by_agent_id[agent.id].extend(trades)
             step_reports.append(
-                {
-                    "agent_id": agent["id"],
-                    "equity": equity,
-                    "trades": [{"symbol": trade.symbol, "side": trade.side, "quantity": trade.quantity, "price": trade.price} for trade in trades],
-                }
+                AgentStep(agent.id, equity, tuple(StepTrade(trade.symbol, trade.side, trade.quantity, trade.price) for trade in trades))
             )
         if on_step:
-            on_step({"timestamp": exchange_timestamp(today, MARKET_CLOSE), "agents": step_reports})
+            on_step(StepEvent(exchange_timestamp(today, MARKET_CLOSE), tuple(step_reports)))
 
     agent_results = []
     for agent, _ in agent_behaviours:
-        final_equity = accounts_by_agent_id[agent["id"]].value(close_prices.loc[trading_days[-1]])
-        equity_curve = (*equity_curves_by_agent_id[agent["id"]], EquityPoint(exchange_timestamp(trading_days[-1], MARKET_CLOSE), final_equity))
+        final_equity = accounts_by_agent_id[agent.id].value(close_prices.loc[trading_days[-1]])
+        equity_curve = (*equity_curves_by_agent_id[agent.id], EquityPoint(exchange_timestamp(trading_days[-1], MARKET_CLOSE), final_equity))
         agent_results.append(
-            AgentResult(agent["id"], final_equity, final_equity / run["initial_cash"] - 1, equity_curve, tuple(trades_by_agent_id[agent["id"]]))
+            AgentResult(agent.id, final_equity, final_equity / run.initial_cash - 1, equity_curve, tuple(trades_by_agent_id[agent.id]))
         )
     return SimulationResult(tuple(agent_results))
 
@@ -422,14 +365,11 @@ class KronosForecaster:
         self.lookback, self.sample_count = lookback, sample_count
 
     @functools.cached_property
-    def _predictor(self) -> Predictor:
+    def _predictor(self) -> Any:
         sys.path.insert(0, str(ROOT / "vendor" / "Kronos"))
         from model import Kronos, KronosPredictor, KronosTokenizer
 
-        return cast(
-            Predictor,
-            KronosPredictor(Kronos.from_pretrained(MODEL).eval(), KronosTokenizer.from_pretrained(TOKENIZER).eval(), max_context=self.lookback),
-        )
+        return KronosPredictor(Kronos.from_pretrained(MODEL).eval(), KronosTokenizer.from_pretrained(TOKENIZER).eval(), max_context=self.lookback)
 
     def forecast(self, bars: pd.DataFrame, target_date: pd.Timestamp) -> pd.DataFrame:
         history_by_symbol = {symbol: group.tail(self.lookback) for symbol, group in bars.groupby("symbol")}

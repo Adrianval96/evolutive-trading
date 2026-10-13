@@ -3,9 +3,10 @@ import os
 import sqlite3
 import uuid
 from contextlib import closing
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -46,6 +47,15 @@ class RunRequest(BaseModel):
     cost_bps: float = Field(default=0, ge=0)
 
 
+def to_engine_request(body: RunRequest) -> engine.RunRequest:
+    return engine.RunRequest(
+        agents=tuple(engine.AgentSpec(agent.strategy, agent.label, agent.parameters) for agent in body.agents),
+        market=engine.MarketSelection(tuple(body.market.symbols), body.market.interval, body.market.start.isoformat(), body.market.end.isoformat()),
+        initial_cash=body.initial_cash,
+        cost_bps=body.cost_bps,
+    )
+
+
 def envelope(data: dict[str, Any], status_code: int) -> JSONResponse:
     return JSONResponse({"success": True, "data": data, "error": None, "meta": None}, status_code=status_code)
 
@@ -65,7 +75,7 @@ def create_app(db_path: str | Path | None = None, bars_path: str | Path | None =
     bars_file = Path(bars_path or os.environ.get("EVOLUTIVE_BARS") or ROOT / "data" / "bars.csv")
     database_file.parent.mkdir(parents=True, exist_ok=True)
     connect(database_file).close()
-    market = engine.market_info(engine.load_bars(bars_file))
+    available = engine.available_dates(engine.load_bars(bars_file))
     app = FastAPI(title="evolutive-trading engine", version="1.0.0-draft")
 
     @app.exception_handler(RequestValidationError)
@@ -79,19 +89,20 @@ def create_app(db_path: str | Path | None = None, bars_path: str | Path | None =
     @app.post("/v1/runs")
     def create_run(body: RunRequest) -> JSONResponse:
         try:
-            # pydantic has already validated the body, so its dump has the shape of engine.RunRequest.
-            run = engine.normalize_run(cast(engine.RunRequest, body.model_dump(mode="json")), market)
+            run = engine.normalize_run(to_engine_request(body), available)
         except engine.InvalidRunError as error:
             return failure("invalid_parameters", str(error), 400)
         run_id, created_at = f"run_{uuid.uuid4().hex[:8]}", datetime.now(UTC).isoformat(timespec="seconds")
         with closing(connect(database_file)) as connection, connection:
-            connection.execute("INSERT INTO runs (id, status, created_at, request) VALUES (?, 'queued', ?, ?)", (run_id, created_at, json.dumps(run)))
+            connection.execute(
+                "INSERT INTO runs (id, status, created_at, request) VALUES (?, 'queued', ?, ?)", (run_id, created_at, json.dumps(asdict(run)))
+            )
         return envelope(
             {
                 "id": run_id,
                 "status": "queued",
                 "created_at": created_at,
-                "agents": [{"id": agent["id"], "label": agent["label"]} for agent in run["agents"]],
+                "agents": [{"id": agent.id, "label": agent.label} for agent in run.agents],
             },
             202,
         )

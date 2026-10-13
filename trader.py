@@ -7,7 +7,19 @@ from typing import Any
 
 import pandas as pd
 
-from engine import LOOKBACK, KronosForecaster, RunRequest, StepEvent, load_bars, market_info, normalize_run, run_simulation, top_picks
+from engine import (
+    LOOKBACK,
+    AgentSpec,
+    KronosForecaster,
+    MarketSelection,
+    RunRequest,
+    StepEvent,
+    available_dates,
+    load_bars,
+    normalize_run,
+    run_simulation,
+    top_picks,
+)
 
 ROOT = Path(__file__).parent
 
@@ -110,23 +122,23 @@ def trade() -> None:
 def simulate(path: Path, start: str | None, end: str | None, top_k: int, cost_bps: float) -> None:
     bars = load_bars(path)
     days = sorted(bars["timestamp"].unique())
-    request: RunRequest = {
-        "agents": [{"label": "kronos", "strategy": "kronos-top5", "parameters": {"top_k": top_k}}],
-        "market": {
-            "symbols": sorted(bars["symbol"].unique()),
-            "interval": "1d",
-            "start": start or pd.Timestamp(days[min(LOOKBACK, len(days) - 2)]).strftime("%Y-%m-%d"),
-            "end": end or pd.Timestamp(days[-1]).strftime("%Y-%m-%d"),
-        },
-        "initial_cash": INITIAL_CASH,
-        "cost_bps": cost_bps,
-    }
-    run = normalize_run(request, market_info(bars))
+    request = RunRequest(
+        agents=(AgentSpec("kronos-top5", "kronos", {"top_k": top_k}),),
+        market=MarketSelection(
+            symbols=tuple(sorted(bars["symbol"].unique())),
+            interval="1d",
+            start=start or pd.Timestamp(days[min(LOOKBACK, len(days) - 2)]).strftime("%Y-%m-%d"),
+            end=end or pd.Timestamp(days[-1]).strftime("%Y-%m-%d"),
+        ),
+        initial_cash=INITIAL_CASH,
+        cost_bps=cost_bps,
+    )
+    run = normalize_run(request, available_dates(bars))
 
     def print_step(step: StepEvent) -> None:
-        agent = step["agents"][0]
-        sides = {side: [executed_trade["symbol"] for executed_trade in agent["trades"] if executed_trade["side"] == side] for side in ("sell", "buy")}
-        print(f"{step['timestamp'][:10]} equity {agent['equity']:,.2f} | at next open, close: {sides['sell'] or '-'} | buy: {sides['buy'] or '-'}")
+        agent = step.agents[0]
+        sides = {side: [trade.symbol for trade in agent.trades if trade.side == side] for side in ("sell", "buy")}
+        print(f"{step.timestamp[:10]} equity {agent.equity:,.2f} | at next open, close: {sides['sell'] or '-'} | buy: {sides['buy'] or '-'}")
 
     result = run_simulation(run, bars, KronosForecaster(), on_step=print_step).agents[0]
     print(f"\n{INITIAL_CASH:,.2f} -> {result.final_equity:,.2f} ({result.total_return:+.2%})")

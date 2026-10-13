@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bars import make_bars
+from contract import contract
 from service import create_app
 
 PRICES = {"AAPL": [(10, 10)] * 30, "MSFT": [(20, 20)] * 30}
@@ -34,7 +35,7 @@ def stored_runs(db_path):
         return [dict(row) for row in db.execute("SELECT * FROM runs")]
 
 
-def test_queues_a_run_and_answers_202(client, db_path, contract):
+def test_queues_a_run_and_answers_202(client, db_path):
     response = client.post("/v1/runs", json=RUN)
 
     assert response.status_code == 202
@@ -77,7 +78,7 @@ def test_each_run_gets_its_own_id(client, db_path):
     ({"initial_cash": 0}, "initial_cash"),
     ({"leverage": 2}, "leverage"),
 ])
-def test_rejects_invalid_runs_with_the_error_envelope(client, db_path, contract, change, message):
+def test_rejects_invalid_runs_with_the_error_envelope(client, db_path, change, message):
     response = client.post("/v1/runs", json={**RUN, **change})
 
     assert response.status_code == 400
@@ -88,7 +89,7 @@ def test_rejects_invalid_runs_with_the_error_envelope(client, db_path, contract,
     assert stored_runs(db_path) == []
 
 
-def test_rejects_a_body_that_is_not_json(client, db_path, contract):
+def test_rejects_a_body_that_is_not_json(client, db_path):
     response = client.post("/v1/runs", content="not json", headers={"content-type": "application/json"})
 
     assert response.status_code == 400

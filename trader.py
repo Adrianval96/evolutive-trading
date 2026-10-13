@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from engine import KronosForecaster, load_bars, market_info, normalize_run, run_simulation, top_picks
+from engine import LOOKBACK, KronosForecaster, load_bars, market_info, normalize_run, run_simulation, top_picks
 
 ROOT = Path(__file__).parent
 
@@ -21,7 +21,6 @@ SIP_DELAY = timedelta(minutes=16)
 PREDICTIONS_CSV = ROOT / "predictions.csv"
 BAR_COLUMNS = ["symbol", "timestamp", "open", "high", "low", "close", "volume"]
 INITIAL_CASH = 100_000.0
-SIMULATION_WARMUP = 512
 
 
 def clients():
@@ -97,7 +96,7 @@ def simulate(path, start, end, top_k, cost_bps):
     run = normalize_run({
         "agents": [{"label": "kronos", "strategy": "kronos-top5", "parameters": {"top_k": top_k}}],
         "market": {"symbols": sorted(bars["symbol"].unique()), "interval": "1d",
-                   "start": start or pd.Timestamp(days[min(SIMULATION_WARMUP, len(days) - 2)]).strftime("%Y-%m-%d"),
+                   "start": start or pd.Timestamp(days[min(LOOKBACK, len(days) - 2)]).strftime("%Y-%m-%d"),
                    "end": end or pd.Timestamp(days[-1]).strftime("%Y-%m-%d")},
         "initial_cash": INITIAL_CASH,
         "cost_bps": cost_bps,
@@ -148,7 +147,7 @@ def main():
     fetch_parser.add_argument("path", type=Path)
     simulate_parser = commands.add_parser("simulate", help="replay a bars CSV day by day with the Kronos strategy")
     simulate_parser.add_argument("path", type=Path)
-    simulate_parser.add_argument("--start", help=f"first simulated day, YYYY-MM-DD (default: after {SIMULATION_WARMUP} days of history)")
+    simulate_parser.add_argument("--start", help=f"first simulated day, YYYY-MM-DD (default: after {LOOKBACK} days of history)")
     simulate_parser.add_argument("--end", help="last day, YYYY-MM-DD (default: the last bar)")
     simulate_parser.add_argument("--top-k", type=int, default=TOP_K)
     simulate_parser.add_argument("--cost-bps", type=float, default=0, help="trading costs per side, in basis points")

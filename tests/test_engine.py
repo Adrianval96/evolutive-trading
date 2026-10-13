@@ -1,4 +1,5 @@
 import math
+import re
 
 import pandas as pd
 import pytest
@@ -6,6 +7,7 @@ from mockito import ANY, captor, mock, verify, when
 
 import engine
 from bars import make_bars
+from contract import contract
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],
@@ -38,12 +40,12 @@ def favouring(picks_by_day):
     return forecaster
 
 
-def test_strategies_follow_the_contract(contract):
+def test_strategies_follow_the_contract():
     contract("StrategiesEnvelope", {"success": True, "data": engine.strategies(), "error": None, "meta": None})
     assert [s["id"] for s in engine.strategies()] == ["buy-and-hold", "kronos-top5", "ma-crossover"]
 
 
-def test_market_lists_each_symbol_with_its_daily_range(contract):
+def test_market_lists_each_symbol_with_its_daily_range():
     market = engine.market_info(make_bars(PRICES))
 
     contract("Market", market)
@@ -78,7 +80,7 @@ def test_normalize_fills_ids_labels_defaults_and_costs():
 def test_normalize_rejects_runs_the_engine_cannot_simulate(change, message):
     request = {"agents": [kronos(1)], "market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}, "initial_cash": 1000, **change}
 
-    with pytest.raises(engine.InvalidRun, match=message.replace("(", r"\(").replace(")", r"\)")):
+    with pytest.raises(engine.InvalidRun, match=re.escape(message)):
         engine.normalize_run(request, engine.market_info(make_bars(PRICES)))
 
 
@@ -140,7 +142,7 @@ def test_history_before_start_is_available_but_not_traded():
     result = engine.run_simulation(run_spec(kronos(1), start="2026-01-06"), make_bars(PRICES), forecaster)
 
     assert seen == [5, 5]
-    assert result.steps_total == 2
+    assert len(result.agents[0].equity) == 3
     assert result.agents[0].trades[0].timestamp == "2026-01-07T09:30:00-05:00"
 
 
@@ -167,7 +169,7 @@ def test_agents_keep_independent_accounts():
     assert together.agents[1].final_equity != alone.agents[0].final_equity
 
 
-def test_each_step_is_reported_as_it_happens(contract):
+def test_each_step_is_reported_as_it_happens():
     progress = mock()
 
     engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES), on_step=progress.step)
@@ -181,7 +183,7 @@ def test_each_step_is_reported_as_it_happens(contract):
         {"symbol": "A", "side": "buy", "quantity": 50, "price": 10}, {"symbol": "B", "side": "buy", "quantity": 25, "price": 20}]
 
 
-def test_the_result_follows_the_contract(contract):
+def test_the_result_follows_the_contract():
     result = engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES))
 
     payload = result.to_contract()
@@ -208,7 +210,7 @@ def test_the_kronos_forecaster_feeds_each_symbols_recent_history_and_returns_exp
 
     when(predictor).predict_batch(...).thenAnswer(answer)
     forecaster = engine.KronosForecaster(lookback=2, sample_count=3)
-    when(forecaster)._load().thenReturn(predictor)
+    forecaster._predictor = predictor
 
     forecasts = forecaster.forecast(make_bars(PRICES), pd.Timestamp("2026-01-09"))
 

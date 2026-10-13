@@ -1,3 +1,4 @@
+import functools
 import sys
 from dataclasses import asdict, dataclass
 from datetime import timedelta
@@ -57,7 +58,6 @@ class AgentResult:
 @dataclass(frozen=True)
 class SimulationResult:
     agents: tuple[AgentResult, ...]
-    steps_total: int
 
     def to_contract(self):
         return {"agents": [{
@@ -82,18 +82,10 @@ class Account:
 
 
 @dataclass(frozen=True)
-class FillResult:
-    account: Account
-    trades: tuple[Trade, ...]
-
-
-@dataclass(frozen=True)
 class Day:
-    date: pd.Timestamp
-    next_date: pd.Timestamp
     symbols: tuple[str, ...]
     closes: pd.DataFrame
-    entries: dict
+    positions: dict
     forecast: Callable[[], pd.Series]
 
 
@@ -132,8 +124,8 @@ class MovingAverageCrossover:
             if signal != self.previous.get(symbol):
                 self.armed[symbol] = True
             self.previous[symbol] = signal
-            entry = day.entries.get(symbol)
-            if entry is not None and self.stop_loss and closes.iloc[-1] < entry * (1 - self.stop_loss):
+            position = day.positions.get(symbol)
+            if position and self.stop_loss and closes.iloc[-1] < position.entry_price * (1 - self.stop_loss):
                 self.armed[symbol] = False
             if signal and self.armed[symbol]:
                 targets[symbol] = 1 / len(day.symbols)
@@ -162,7 +154,7 @@ STRATEGIES = {s.id: s for s in (
 
 def strategies():
     return [{"id": s.id, "name": s.name, "description": s.description, "parameters": [asdict(p) for p in s.parameters]}
-            for s in sorted(STRATEGIES.values(), key=lambda s: s.id)]
+            for s in STRATEGIES.values()]
 
 
 def load_bars(path):
@@ -220,17 +212,13 @@ def check_market(selection, market):
 
 def normalize_run(request, market):
     agents = [normalize_agent(i, agent) for i, agent in enumerate(request["agents"])]
-    selection = {key: request["market"][key] for key in ("symbols", "interval", "start", "end")}
+    selection = request["market"]
     check_market(selection, market)
     return {"agents": agents, "market": selection, "initial_cash": request["initial_cash"], "cost_bps": request.get("cost_bps", 0)}
 
 
-def at_close(day):
-    return (day + MARKET_CLOSE).tz_localize(EXCHANGE_TZ).isoformat()
-
-
-def at_open(day):
-    return (day + MARKET_OPEN).tz_localize(EXCHANGE_TZ).isoformat()
+def at(day, time):
+    return (day + time).tz_localize(EXCHANGE_TZ).isoformat()
 
 
 def fill(account, targets, equity, prices, cost, when):
@@ -244,18 +232,7 @@ def fill(account, targets, equity, prices, cost, when):
         cash -= notional * (1 + cost)
         positions[symbol] = Position(notional / price, price)
         trades.append(Trade(when, symbol, "buy", notional / price, price))
-    return FillResult(Account(cash, positions), tuple(trades))
-
-
-def once(compute):
-    cache = []
-
-    def get():
-        if not cache:
-            cache.append(compute())
-        return cache[0]
-
-    return get
+    return Account(cash, positions), tuple(trades)
 
 
 def run_simulation(run, bars, forecaster=None, on_step=None):
@@ -273,7 +250,7 @@ def run_simulation(run, bars, forecaster=None, on_step=None):
     if not len(steps):
         raise ValueError("The range needs at least two trading days from its start.")
 
-    cost = run.get("cost_bps", 0) / 1e4
+    cost = run["cost_bps"] / 1e4
     agents = [(a, STRATEGIES[a["strategy"]].policy(a["parameters"])) for a in run["agents"]]
     accounts = {a["id"]: Account(run["initial_cash"], {}) for a, _ in agents}
     curves = {a["id"]: [] for a, _ in agents}
@@ -282,46 +259,43 @@ def run_simulation(run, bars, forecaster=None, on_step=None):
     for i in steps:
         today, tomorrow = days[i], days[i + 1]
         history = data[data["timestamp"] <= today]
-        forecast = once(lambda h=history, t=tomorrow: forecaster.forecast(h, t).set_index("symbol")["exp_return"])
+        forecast = functools.cache(lambda: forecaster.forecast(history, tomorrow).set_index("symbol")["exp_return"])
         reported = []
         for agent, policy in agents:
             account = accounts[agent["id"]]
             equity = account.value(closes.loc[today])
-            entries = {symbol: p.entry_price for symbol, p in account.positions.items()}
-            targets = policy.decide(Day(today, tomorrow, symbols, closes.loc[:today], entries, forecast))
-            filled = fill(account, targets, equity, opens.loc[tomorrow], cost, at_open(tomorrow))
-            accounts[agent["id"]] = filled.account
-            curves[agent["id"]].append(EquityPoint(at_close(today), equity))
-            fills[agent["id"]].extend(filled.trades)
+            targets = policy.decide(Day(symbols, closes.loc[:today], account.positions, forecast))
+            accounts[agent["id"]], trades = fill(account, targets, equity, opens.loc[tomorrow], cost, at(tomorrow, MARKET_OPEN))
+            curves[agent["id"]].append(EquityPoint(at(today, MARKET_CLOSE), equity))
+            fills[agent["id"]].extend(trades)
             reported.append({"agent_id": agent["id"], "equity": equity, "trades": [
-                {"symbol": t.symbol, "side": t.side, "quantity": t.quantity, "price": t.price} for t in filled.trades]})
+                {"symbol": t.symbol, "side": t.side, "quantity": t.quantity, "price": t.price} for t in trades]})
         if on_step:
-            on_step({"timestamp": at_close(today), "agents": reported})
+            on_step({"timestamp": at(today, MARKET_CLOSE), "agents": reported})
 
     results = []
     for agent, _ in agents:
         final = accounts[agent["id"]].value(closes.loc[days[-1]])
-        curve = (*curves[agent["id"]], EquityPoint(at_close(days[-1]), final))
+        curve = (*curves[agent["id"]], EquityPoint(at(days[-1], MARKET_CLOSE), final))
         results.append(AgentResult(agent["id"], final, final / run["initial_cash"] - 1, curve, tuple(fills[agent["id"]])))
-    return SimulationResult(tuple(results), len(steps))
+    return SimulationResult(tuple(results))
 
 
 class KronosForecaster:
     def __init__(self, lookback=LOOKBACK, sample_count=SAMPLE_COUNT):
-        self.lookback, self.sample_count, self._predictor = lookback, sample_count, None
+        self.lookback, self.sample_count = lookback, sample_count
 
-    def _load(self):
-        if self._predictor is None:
-            sys.path.insert(0, str(ROOT / "vendor" / "Kronos"))
-            from model import Kronos, KronosPredictor, KronosTokenizer
+    @functools.cached_property
+    def _predictor(self):
+        sys.path.insert(0, str(ROOT / "vendor" / "Kronos"))
+        from model import Kronos, KronosPredictor, KronosTokenizer
 
-            self._predictor = KronosPredictor(
-                Kronos.from_pretrained(MODEL).eval(), KronosTokenizer.from_pretrained(TOKENIZER).eval(), max_context=self.lookback)
-        return self._predictor
+        return KronosPredictor(
+            Kronos.from_pretrained(MODEL).eval(), KronosTokenizer.from_pretrained(TOKENIZER).eval(), max_context=self.lookback)
 
     def forecast(self, bars, target_date):
         history = {symbol: group.tail(self.lookback) for symbol, group in bars.groupby("symbol")}
-        preds = self._load().predict_batch(
+        preds = self._predictor.predict_batch(
             df_list=[h[["open", "high", "low", "close", "volume"]] for h in history.values()],
             x_timestamp_list=[h["timestamp"] for h in history.values()],
             y_timestamp_list=[pd.Series([target_date])] * len(history),

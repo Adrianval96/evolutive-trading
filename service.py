@@ -18,11 +18,7 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    request TEXT NOT NULL,
-    steps_done INTEGER NOT NULL DEFAULT 0,
-    steps_total INTEGER,
-    result TEXT,
-    failure TEXT
+    request TEXT NOT NULL
 )"""
 
 
@@ -68,7 +64,7 @@ def create_app(db_path=None, bars_path=None):
     bars_path = Path(bars_path or os.environ.get("EVOLUTIVE_BARS", ROOT / "data" / "bars.csv"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connect(db_path).close()
-    market = engine.once(lambda: engine.market_info(engine.load_bars(bars_path)))
+    market = engine.market_info(engine.load_bars(bars_path))
     app = FastAPI(title="evolutive-trading engine", version="1.0.0-draft")
 
     @app.exception_handler(RequestValidationError)
@@ -82,7 +78,7 @@ def create_app(db_path=None, bars_path=None):
     @app.post("/v1/runs")
     def create_run(body: RunRequest):
         try:
-            run = engine.normalize_run(body.model_dump(mode="json"), market())
+            run = engine.normalize_run(body.model_dump(mode="json"), market)
         except engine.InvalidRun as error:
             return failure("invalid_parameters", str(error), 400)
         run_id, created_at = f"run_{uuid.uuid4().hex[:8]}", datetime.now(UTC).isoformat(timespec="seconds")

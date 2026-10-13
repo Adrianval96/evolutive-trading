@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: evolutive-trading engine API
-  version: 1.0.0-draft
+  version: 1.0.0
   description: |
     Simulation service for trading agents. Simulation only; no real money.
     Every JSON response is an envelope { success, data, error, meta }. Field names are snake_case.

@@ -3,9 +3,9 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from evolutive_trading.adapters.inbound.http import create_api
-from evolutive_trading.adapters.outbound.csv_bars import available_dates, load_bars
-from evolutive_trading.adapters.outbound.sqlite_run_repository import SqliteRunRepository
+from evolutive_trading.adapters.api.app import create_api
+from evolutive_trading.adapters.market_data.csv_bars import available_dates, load_bars
+from evolutive_trading.adapters.storage.sqlite_run_repository import SqliteRunRepository
 from evolutive_trading.application.queue_run import QueueRun
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]

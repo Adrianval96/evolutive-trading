@@ -3,17 +3,12 @@ import pytest
 from bars import make_bars
 from fakes import FakePredictor
 
-from evolutive_trading.adapters.outbound.csv_bars import available_dates
-from evolutive_trading.adapters.outbound.kronos_forecaster import KronosForecaster
+from evolutive_trading.adapters.forecasting.kronos_forecaster import KronosForecaster
 
 PRICES = {
     "A": [(10, 9), (10, 11), (12, 12), (12, 13)],
     "B": [(20, 20), (20, 20), (20, 21), (22, 24)],
 }
-
-
-def test_available_dates_lists_each_symbols_first_and_last_day():
-    assert available_dates(make_bars(PRICES)) == {"A": ("2026-01-05", "2026-01-08"), "B": ("2026-01-05", "2026-01-08")}
 
 
 def test_the_kronos_forecaster_feeds_each_symbols_recent_history_and_returns_expected_returns():

@@ -41,6 +41,11 @@ source_modules = ["evolutive_trading.domain.model", "evolutive_trading.domain.va
 forbidden_modules = ["pandas"]
 
 [[tool.importlinter.contracts]]
-name = "Inbound and outbound adapters do not know each other"
+name = "Adapters do not know each other"
 type = "independence"
-modules = ["evolutive_trading.adapters.inbound", "evolutive_trading.adapters.outbound"]
+modules = [
+    "evolutive_trading.adapters.api",
+    "evolutive_trading.adapters.storage",
+    "evolutive_trading.adapters.market_data",
+    "evolutive_trading.adapters.forecasting",
+]

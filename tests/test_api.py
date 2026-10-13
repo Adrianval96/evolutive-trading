@@ -74,7 +74,7 @@ def test_each_run_gets_its_own_id(client, db_path):
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        ({"agents": [{"strategy": "nope"}]}, 'Unknown strategy "nope"'),
+        ({"agents": [{"strategy": "unknown-strategy"}]}, 'Unknown strategy "unknown-strategy"'),
         ({"agents": []}, "agents"),
         ({"cost_bps": -1}, "cost_bps"),
         ({"initial_cash": 0}, "initial_cash"),

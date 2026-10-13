@@ -66,13 +66,13 @@ def test_normalize_fills_ids_labels_defaults_and_costs():
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        ({"agents": [{"strategy": "nope"}]}, 'Unknown strategy "nope"'),
+        ({"agents": [{"strategy": "unknown-strategy"}]}, 'Unknown strategy "unknown-strategy"'),
         ({"agents": [kronos(0)]}, "top_k must be between 1 and 20"),
         ({"agents": [kronos(2.5)]}, "top_k must be a whole number"),
         ({"agents": [{"strategy": "kronos-top5", "parameters": {"window": 3}}]}, 'Unknown parameter "window"'),
         ({"agents": [{"strategy": "ma-crossover", "parameters": {"fast": 10, "slow": 5}}]}, "slow (5) must be greater than fast (10)"),
         ({"market": {"symbols": ["A"], "interval": "5m", "start": "2026-01-05", "end": "2026-01-08"}}, 'Unknown interval "5m"'),
-        ({"market": {"symbols": ["ZZZ"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}}, "ZZZ has no 1d data"),
+        ({"market": {"symbols": ["UNLISTED"], "interval": "1d", "start": "2026-01-05", "end": "2026-01-08"}}, "UNLISTED has no 1d data"),
         ({"market": {"symbols": ["A"], "interval": "1d", "start": "2026-01-08", "end": "2026-01-05"}}, "start must be before end"),
         ({"market": {"symbols": ["A"], "interval": "1d", "start": "2025-12-01", "end": "2026-01-08"}}, "A has 1d data from 2026-01-05 to 2026-01-08"),
     ],

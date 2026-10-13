@@ -17,7 +17,7 @@ PRICES = {
 
 def run_spec(*agents, symbols=("A", "B"), start="2026-01-05", end="2026-01-08", initial_cash=1000, cost_bps=0):
     return {
-        "agents": [{"id": f"agt_{i + 1}", "label": a["strategy"], **a} for i, a in enumerate(agents)],
+        "agents": [{"id": f"agt_{index + 1}", "label": agent_spec["strategy"], **agent_spec} for index, agent_spec in enumerate(agents)],
         "market": {"symbols": list(symbols), "interval": "1d", "start": start, "end": end},
         "initial_cash": initial_cash,
         "cost_bps": cost_bps,
@@ -34,7 +34,7 @@ def favouring(picks_by_day):
     def answer(history, target_date):
         today = history["timestamp"].max().strftime("%Y-%m-%d")
         favoured = picks_by_day[today]
-        return pd.DataFrame({"symbol": ["A", "B"], "exp_return": [0.01 if s in favoured else -0.01 for s in ["A", "B"]]})
+        return pd.DataFrame({"symbol": ["A", "B"], "exp_return": [0.01 if symbol in favoured else -0.01 for symbol in ["A", "B"]]})
 
     when(forecaster).forecast(...).thenAnswer(answer)
     return forecaster
@@ -42,7 +42,7 @@ def favouring(picks_by_day):
 
 def test_strategies_follow_the_contract():
     contract("StrategiesEnvelope", {"success": True, "data": engine.strategies(), "error": None, "meta": None})
-    assert [s["id"] for s in engine.strategies()] == ["buy-and-hold", "kronos-top5", "ma-crossover"]
+    assert [strategy["id"] for strategy in engine.strategies()] == ["buy-and-hold", "kronos-top5", "ma-crossover"]
 
 
 def test_market_lists_each_symbol_with_its_daily_range():
@@ -88,7 +88,7 @@ def test_buy_and_hold_buys_every_symbol_once_and_never_trades_again():
     result = engine.run_simulation(run_spec({"strategy": "buy-and-hold", "parameters": {}}), make_bars(PRICES))
 
     agent = result.agents[0]
-    assert [(t.symbol, t.side, t.quantity, t.price) for t in agent.trades] == [("A", "buy", 50, 10), ("B", "buy", 25, 20)]
+    assert [(trade.symbol, trade.side, trade.quantity, trade.price) for trade in agent.trades] == [("A", "buy", 50, 10), ("B", "buy", 25, 20)]
     assert agent.final_equity == 50 * 13 + 25 * 24
 
 
@@ -98,12 +98,12 @@ def test_orders_fill_at_the_next_open_and_costs_are_charged_on_both_sides():
     result = engine.run_simulation(run_spec(kronos(1), cost_bps=10), make_bars(PRICES), forecaster)
 
     agent = result.agents[0]
-    assert [(t.timestamp, t.symbol, t.side, t.quantity, t.price) for t in agent.trades] == [
+    assert [(trade.timestamp, trade.symbol, trade.side, trade.quantity, trade.price) for trade in agent.trades] == [
         ("2026-01-06T09:30:00-05:00", "A", "buy", 100, 10),
         ("2026-01-08T09:30:00-05:00", "A", "sell", 100, 12),
         ("2026-01-08T09:30:00-05:00", "B", "buy", 54.5, 22),
     ]
-    assert [p.equity for p in agent.equity[:3]] == pytest.approx([1000, 1099, 1199])
+    assert [equity_point.equity for equity_point in agent.equity[:3]] == pytest.approx([1000, 1099, 1199])
     assert agent.final_equity == pytest.approx(1305.601)
     assert agent.total_return == pytest.approx(0.305601)
 
@@ -113,7 +113,7 @@ def test_kept_positions_are_not_resized():
 
     result = engine.run_simulation(run_spec(kronos(2)), make_bars(PRICES), forecaster)
 
-    trades = [(t.symbol, t.side, t.quantity) for t in result.agents[0].trades]
+    trades = [(trade.symbol, trade.side, trade.quantity) for trade in result.agents[0].trades]
     assert trades == [("A", "buy", 50), ("B", "buy", 26.25)]
 
 
@@ -154,7 +154,7 @@ def test_crossover_enters_on_a_crossover_and_waits_for_a_fresh_one_after_a_stop(
 
     result = engine.run_simulation(run_spec(agent, symbols=("S",), end="2026-01-16"), bars)
 
-    assert [(t.timestamp[:10], t.side, t.price) for t in result.agents[0].trades] == [
+    assert [(trade.timestamp[:10], trade.side, trade.price) for trade in result.agents[0].trades] == [
         ("2026-01-12", "buy", 14), ("2026-01-14", "sell", 12.5), ("2026-01-16", "buy", 16)]
 
 
@@ -190,7 +190,7 @@ def test_the_result_follows_the_contract():
 
     contract("Result", payload)
     equity = payload["agents"][0]["equity"]
-    assert [p["timestamp"] for p in equity] == [f"2026-01-0{d}T16:00:00-05:00" for d in (5, 6, 7, 8)]
+    assert [equity_point["timestamp"] for equity_point in equity] == [f"2026-01-0{day}T16:00:00-05:00" for day in (5, 6, 7, 8)]
     assert math.isclose(equity[-1]["equity"], payload["agents"][0]["final_equity"])
 
 
@@ -205,8 +205,8 @@ def test_the_kronos_forecaster_feeds_each_symbols_recent_history_and_returns_exp
     predictor, lengths = mock(), []
 
     def answer(df_list, **_):
-        lengths.extend(len(df) for df in df_list)
-        return [pd.DataFrame({"close": [df["close"].iloc[-1] * 1.1]}) for df in df_list]
+        lengths.extend(len(symbol_history) for symbol_history in df_list)
+        return [pd.DataFrame({"close": [symbol_history["close"].iloc[-1] * 1.1]}) for symbol_history in df_list]
 
     when(predictor).predict_batch(...).thenAnswer(answer)
     forecaster = engine.KronosForecaster(lookback=2, sample_count=3)

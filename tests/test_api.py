@@ -30,9 +30,9 @@ def client(tmp_path, db_path):
 
 
 def stored_runs(db_path):
-    with sqlite3.connect(db_path) as db:
-        db.row_factory = sqlite3.Row
-        return [dict(row) for row in db.execute("SELECT * FROM runs")]
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        return [dict(row) for row in connection.execute("SELECT * FROM runs")]
 
 
 def test_queues_a_run_and_answers_202(client, db_path):

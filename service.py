@@ -54,9 +54,9 @@ def failure(code, message, status_code):
 
 
 def connect(db_path):
-    db = sqlite3.connect(db_path)
-    db.execute(SCHEMA)
-    return db
+    connection = sqlite3.connect(db_path)
+    connection.execute(SCHEMA)
+    return connection
 
 
 def create_app(db_path=None, bars_path=None):
@@ -82,9 +82,9 @@ def create_app(db_path=None, bars_path=None):
         except engine.InvalidRun as error:
             return failure("invalid_parameters", str(error), 400)
         run_id, created_at = f"run_{uuid.uuid4().hex[:8]}", datetime.now(UTC).isoformat(timespec="seconds")
-        with closing(connect(db_path)) as db, db:
-            db.execute("INSERT INTO runs (id, status, created_at, request) VALUES (?, 'queued', ?, ?)", (run_id, created_at, json.dumps(run)))
+        with closing(connect(db_path)) as connection, connection:
+            connection.execute("INSERT INTO runs (id, status, created_at, request) VALUES (?, 'queued', ?, ?)", (run_id, created_at, json.dumps(run)))
         return envelope({"id": run_id, "status": "queued", "created_at": created_at,
-                         "agents": [{"id": a["id"], "label": a["label"]} for a in run["agents"]]}, 202)
+                         "agents": [{"id": agent["id"], "label": agent["label"]} for agent in run["agents"]]}, 202)
 
     return app

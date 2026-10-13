@@ -23,7 +23,7 @@ BAR_COLUMNS = ["symbol", "timestamp", "open", "high", "low", "close", "volume"]
 INITIAL_CASH = 100_000.0
 
 
-def clients():
+def alpaca_clients():
     from alpaca.data.historical import StockHistoricalDataClient
     from alpaca.trading.client import TradingClient
 
@@ -31,7 +31,7 @@ def clients():
     return TradingClient(key, secret, paper=True), StockHistoricalDataClient(key, secret)
 
 
-def daily_bars(data, symbols, start, end=None):
+def daily_bars(market_data_client, symbols, start, end=None):
     from alpaca.data.enums import Adjustment, DataFeed
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
@@ -45,7 +45,7 @@ def daily_bars(data, symbols, start, end=None):
         feed=DataFeed.SIP,
         adjustment=Adjustment.ALL,
     )
-    bars = data.get_stock_bars(request).df.reset_index()
+    bars = market_data_client.get_stock_bars(request).df.reset_index()
     bars["timestamp"] = bars["timestamp"].dt.tz_convert("America/New_York").dt.tz_localize(None).dt.normalize()
     return bars
 
@@ -59,13 +59,13 @@ def trade():
     from alpaca.trading.enums import OrderSide, TimeInForce
     from alpaca.trading.requests import MarketOrderRequest
 
-    trading, data = clients()
+    trading, market_data_client = alpaca_clients()
     clock = trading.get_clock()
     if clock.is_open:
         sys.exit("Market is open. Run outside market hours so the last daily candle is complete.")
     target_date = pd.Timestamp(clock.next_open.date())
 
-    forecasts = KronosForecaster().forecast(daily_bars(data, WATCHLIST, datetime.now(UTC) - timedelta(days=HISTORY_DAYS)), target_date)
+    forecasts = KronosForecaster().forecast(daily_bars(market_data_client, WATCHLIST, datetime.now(UTC) - timedelta(days=HISTORY_DAYS)), target_date)
 
     trading.cancel_orders()
     held = {position.symbol for position in trading.get_all_positions()}
@@ -102,35 +102,35 @@ def simulate(path, start, end, top_k, cost_bps):
         "cost_bps": cost_bps,
     }, market_info(bars))
 
-    def report(step):
+    def print_step(step):
         agent = step["agents"][0]
-        sides = {side: [t["symbol"] for t in agent["trades"] if t["side"] == side] for side in ("sell", "buy")}
+        sides = {side: [executed_trade["symbol"] for executed_trade in agent["trades"] if executed_trade["side"] == side] for side in ("sell", "buy")}
         print(f"{step['timestamp'][:10]} equity {agent['equity']:,.2f} | at next open, close: {sides['sell'] or '-'} | buy: {sides['buy'] or '-'}")
 
-    result = run_simulation(run, bars, KronosForecaster(), on_step=report).agents[0]
+    result = run_simulation(run, bars, KronosForecaster(), on_step=print_step).agents[0]
     print(f"\n{INITIAL_CASH:,.2f} -> {result.final_equity:,.2f} ({result.total_return:+.2%})")
 
 
 def fetch(start, end, path):
-    _, data = clients()
+    _, market_data_client = alpaca_clients()
     path.parent.mkdir(parents=True, exist_ok=True)
-    daily_bars(data, WATCHLIST, start, end)[BAR_COLUMNS].to_csv(path, index=False)
+    daily_bars(market_data_client, WATCHLIST, start, end)[BAR_COLUMNS].to_csv(path, index=False)
     print(f"Saved {path}")
 
 
-def change(series):
+def percentage_change(series):
     return f"{series.iloc[-1] / series.iloc[0] - 1:+.2%}"
 
 
 def report():
     from alpaca.trading.requests import GetPortfolioHistoryRequest
 
-    trading, data = clients()
+    trading, market_data_client = alpaca_clients()
     history = trading.get_portfolio_history(GetPortfolioHistoryRequest(period="1A", timeframe="1D"))
     equity = pd.Series(history.equity, index=pd.to_datetime(history.timestamp, unit="s")).dropna()
     equity = equity[equity > 0]
-    benchmark = daily_bars(data, [BENCHMARK], equity.index[0])["close"]
-    print(f"Since {equity.index[0].date()}: strategy {change(equity)} | {BENCHMARK} {change(benchmark)}")
+    benchmark = daily_bars(market_data_client, [BENCHMARK], equity.index[0])["close"]
+    print(f"Since {equity.index[0].date()}: strategy {percentage_change(equity)} | {BENCHMARK} {percentage_change(benchmark)}")
 
 
 def utc_date(text):

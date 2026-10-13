@@ -16,9 +16,9 @@ PRICES = {
 }
 
 
-def run_spec(*agents, symbols=("A", "B"), start="2026-01-05", end="2026-01-08", initial_cash=1000, cost_bps=0):
+def run_spec(*agents, symbols=("A", "B"), start="2026-01-05", end="2026-01-08", cost_bps=0):
     configured = tuple(Agent(f"agt_{index + 1}", spec.strategy, spec.strategy, spec.parameters) for index, spec in enumerate(agents))
-    return Run(configured, MarketSelection(tuple(symbols), "1d", start, end), initial_cash, cost_bps)
+    return Run(configured, MarketSelection(tuple(symbols), "1d", start, end), 1000, cost_bps)
 
 
 def kronos(top_k):

@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from evolutive_trading.application.queue_run import QueueRun
 from evolutive_trading.domain import model
-from evolutive_trading.domain.model import InvalidRunError
 
 
 class AgentSpec(BaseModel):
@@ -66,7 +65,7 @@ def create_api(queue_run: QueueRun) -> FastAPI:
     def create_run(body: RunRequest) -> JSONResponse:
         try:
             queued = queue_run.execute(to_domain_request(body))
-        except InvalidRunError as error:
+        except model.InvalidRunError as error:
             return failure("invalid_parameters", str(error), 400)
         return envelope(
             {

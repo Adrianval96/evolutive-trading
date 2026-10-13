@@ -4,7 +4,7 @@ from typing import Protocol
 
 import pandas as pd
 
-from evolutive_trading.domain.catalog import STRATEGY_PARAMETERS, Parameter
+from evolutive_trading.domain.catalog import STRATEGY_PARAMETERS
 from evolutive_trading.domain.model import Position
 
 
@@ -66,18 +66,9 @@ class MovingAverageCrossover:
         return target_weights
 
 
-@dataclass(frozen=True)
-class Strategy:
-    id: str
-    parameters: tuple[Parameter, ...]
-    behaviour_class: Callable[[dict[str, float]], StrategyBehaviour]
-
-
-STRATEGIES = {
-    strategy_id: Strategy(strategy_id, STRATEGY_PARAMETERS[strategy_id], behaviour_class)
-    for strategy_id, behaviour_class in (
-        ("buy-and-hold", BuyAndHold),
-        ("kronos-top5", KronosTopPicks),
-        ("ma-crossover", MovingAverageCrossover),
-    )
+STRATEGIES: dict[str, Callable[[dict[str, float]], StrategyBehaviour]] = {
+    "buy-and-hold": BuyAndHold,
+    "kronos-top5": KronosTopPicks,
+    "ma-crossover": MovingAverageCrossover,
 }
+assert STRATEGIES.keys() == STRATEGY_PARAMETERS.keys()

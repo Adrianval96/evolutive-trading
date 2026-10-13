@@ -78,7 +78,7 @@ def run_simulation(
         return forecaster.forecast(history, target_date).set_index("symbol")["exp_return"]
 
     cost_rate = run.cost_bps / 1e4
-    agent_behaviours = [(agent, STRATEGIES[agent.strategy].behaviour_class(agent.parameters)) for agent in run.agents]
+    agent_behaviours = [(agent, STRATEGIES[agent.strategy](agent.parameters)) for agent in run.agents]
     accounts_by_agent_id = {agent.id: Account(run.initial_cash, {}) for agent, _ in agent_behaviours}
     equity_curves_by_agent_id: dict[str, list[EquityPoint]] = {agent.id: [] for agent, _ in agent_behaviours}
     trades_by_agent_id: dict[str, list[Trade]] = {agent.id: [] for agent, _ in agent_behaviours}

@@ -2,21 +2,19 @@ import re
 from dataclasses import replace
 
 import pytest
-from bars import make_bars
 
-from evolutive_trading.adapters.outbound.csv_bars import available_dates
 from evolutive_trading.domain.model import Agent, AgentSpec, InvalidRunError, MarketSelection, RunRequest
 from evolutive_trading.domain.validation import normalize_run
 
-AVAILABLE = available_dates(make_bars({"A": [(10, 9), (10, 11), (12, 12), (12, 13)]}))
+AVAILABLE = {"A": ("2026-01-05", "2026-01-08")}
 
 
 def market(symbols=("A",), interval="1d", start="2026-01-05", end="2026-01-08"):
     return MarketSelection(tuple(symbols), interval, start, end)
 
 
-def request(*agents, selection=None, initial_cash=1000, cost_bps=0):
-    return RunRequest(tuple(agents), selection or market(), initial_cash, cost_bps)
+def request(*agents):
+    return RunRequest(tuple(agents), market(), 1000)
 
 
 def kronos(top_k):

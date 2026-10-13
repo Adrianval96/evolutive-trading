@@ -13,8 +13,39 @@ ignore = ["ANN401"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["engine.py", "service.py", "trader.py"]  # tests are linted by ruff, not type-checked
+files = ["src", "trader.py"]  # tests are linted by ruff, not type-checked
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "yaml", "jsonschema.*", "mockito.*", "model", "alpaca.*"]
+module = ["pandas.*", "yaml", "jsonschema.*", "model", "alpaca.*"]
 ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "src"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers only depend inward"
+type = "layers"
+layers = ["src.bootstrap", "src.adapters", "src.application", "src.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Domain and application stay free of frameworks and I/O"
+type = "forbidden"
+source_modules = ["src.domain", "src.application"]
+forbidden_modules = ["fastapi", "pydantic", "uvicorn", "sqlite3", "alpaca", "torch"]
+
+[[tool.importlinter.contracts]]
+name = "The domain model and validation do not use pandas"
+type = "forbidden"
+source_modules = ["src.domain.model", "src.domain.validation"]
+forbidden_modules = ["pandas"]
+
+[[tool.importlinter.contracts]]
+name = "Adapters do not know each other"
+type = "independence"
+modules = [
+    "src.adapters.api",
+    "src.adapters.storage",
+    "src.adapters.market_data",
+    "src.adapters.forecasting",
+]

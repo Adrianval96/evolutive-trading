@@ -57,15 +57,16 @@ Compare against SPY:
 
 ## Tests
 
-The engine has unit tests and the API has integration tests. Neither needs torch, Alpaca or a network:
+Neither the tests nor the checks need torch, Alpaca or a network (`pip install -r requirements-dev.txt`):
 
 ```bash
 .venv.nosync/bin/python -m pytest
+.venv.nosync/bin/ruff check . && .venv.nosync/bin/mypy && .venv.nosync/bin/lint-imports
 ```
 
 ## Simulate over past days
 
-The engine (`engine.py`) replays bars day by day: on each day's close every agent sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized. Costs are charged per side on the traded amount.
+The simulation (`src/application/simulate.py`) replays bars day by day: on each day's close every agent sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized. Costs are charged per side on the traded amount.
 
 ```bash
 set -a; . ./.env; set +a
@@ -75,12 +76,16 @@ set -a; . ./.env; set +a
 
 `data/` is git-ignored: market data terms don't allow publishing the bars. By default the simulation starts after 512 days of history; set `--start` and `--end` to choose the window, `--top-k` for the number of picks. Kronos's pre-training data runs to June 2024, so only results after that date say anything about it.
 
+## Layout
+
+Hexagonal: `domain` (rules), `application` (use cases and ports), `adapters` (HTTP, SQLite, CSV, Kronos) and `bootstrap.py` (wiring). `trader.py` is the script for live trading and the simulate / fetch / report commands. The dependency rules, checked by `lint-imports`, are in [`docs/architecture.md`](docs/architecture.md).
+
 ## Engine service
 
 An HTTP service that queues simulations. Its contract is [`openapi.yaml`](openapi.yaml): every response is a `{ success, data, error, meta }` envelope with snake_case fields.
 
 ```bash
-EVOLUTIVE_BARS=data/bars.csv .venv.nosync/bin/uvicorn service:create_app --factory
+EVOLUTIVE_BARS=data/bars.csv .venv.nosync/bin/uvicorn src.bootstrap:create_app --factory
 ```
 
 ```bash

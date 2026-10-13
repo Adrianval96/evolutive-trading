@@ -38,6 +38,8 @@ The evolution side is not built yet. What exists is the forward-test end: `trade
 
 `.venv.nosync` keeps the ~1 GB of torch out of iCloud. Python 3.12 because Kronos pins `pandas==2.2.2`, which has no 3.13 wheels.
 
+The engine service and the tests need no torch or Alpaca: `pip install -r requirements-service.txt` is enough for them.
+
 ## Run the forward test
 
 Outside US market hours (the script refuses while the market is open):
@@ -53,23 +55,39 @@ Compare against SPY:
 .venv.nosync/bin/python trader.py report
 ```
 
-Run the tests (no torch or Alpaca needed):
+## Tests
+
+The engine has unit tests and the API has integration tests. Neither needs torch, Alpaca or a network:
 
 ```bash
-.venv.nosync/bin/python test_trader.py
+.venv.nosync/bin/python -m pytest
 ```
 
 ## Simulate over past days
 
-The same decision logic, replayed day by day: on each day's close the strategy sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized, as in the live loop.
+The engine (`engine.py`) replays bars day by day: on each day's close every agent sees only the bars up to that day, and its orders fill at the next day's open. Kept positions are not resized. Costs are charged per side on the traded amount.
 
 ```bash
 set -a; . ./.env; set +a
 .venv.nosync/bin/python trader.py fetch 2023-01-01 2026-10-01 data/bars.csv
-.venv.nosync/bin/python trader.py simulate data/bars.csv
+.venv.nosync/bin/python trader.py simulate data/bars.csv --cost-bps 5
 ```
 
-`data/` is git-ignored: market data terms don't allow publishing the bars. The first 512 days are history only; change that with `--warmup`. Kronos was trained on past prices, so a simulation over its training period says nothing about whether it works.
+`data/` is git-ignored: market data terms don't allow publishing the bars. By default the simulation starts after 512 days of history; set `--start` and `--end` to choose the window, `--top-k` for the number of picks. Kronos's pre-training data runs to June 2024, so only results after that date say anything about it.
+
+## Engine service
+
+An HTTP service that queues simulations. Its contract is [`openapi.yaml`](openapi.yaml): every response is a `{ success, data, error, meta }` envelope with snake_case fields.
+
+```bash
+EVOLUTIVE_BARS=data/bars.csv .venv.nosync/bin/uvicorn service:create_app --factory
+```
+
+```bash
+curl -X POST localhost:8000/v1/runs -H 'content-type: application/json' -d '{"agents":[{"strategy":"kronos-top5","parameters":{"top_k":3}},{"strategy":"buy-and-hold"}],"market":{"symbols":["AAPL","MSFT","NVDA"],"interval":"1d","start":"2025-01-16","end":"2026-09-30"},"initial_cash":100000,"cost_bps":5}'
+```
+
+Runs are stored in SQLite at `data/runs.sqlite` (`EVOLUTIVE_DB` to change it). Only `POST /v1/runs` exists so far: it validates the run and stores it as `queued`. Nothing processes queued runs yet; a worker and the remaining calls in the contract come next.
 
 ## Schedule
 

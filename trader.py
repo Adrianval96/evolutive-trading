@@ -2,7 +2,6 @@ import argparse
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -40,27 +39,26 @@ BAR_COLUMNS = ["symbol", "timestamp", "open", "high", "low", "close", "volume"]
 INITIAL_CASH = 100_000.0
 
 
-def alpaca_market_data_client() -> Any:
-    from alpaca.data.historical import StockHistoricalDataClient
-
-    return StockHistoricalDataClient(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"])
-
-
-def daily_bars(market_data_client: Any, symbols: list[str], start: datetime, end: datetime) -> pd.DataFrame:
+def daily_bars(start: datetime, end: datetime) -> pd.DataFrame:
     from alpaca.data.enums import Adjustment, DataFeed
+    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.models import BarSet
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
 
+    market_data_client = StockHistoricalDataClient(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"])
     latest = datetime.now(UTC) - SIP_DELAY
     request = StockBarsRequest(
-        symbol_or_symbols=symbols,
+        symbol_or_symbols=WATCHLIST,
         timeframe=TimeFrame.Day,
         start=start,
         end=min(end, latest),
         feed=DataFeed.SIP,
         adjustment=Adjustment.ALL,
     )
-    bars = market_data_client.get_stock_bars(request).df.reset_index()
+    bar_set = market_data_client.get_stock_bars(request)
+    assert isinstance(bar_set, BarSet)
+    bars = bar_set.df.reset_index()
     bars["timestamp"] = bars["timestamp"].dt.tz_convert("America/New_York").dt.tz_localize(None).dt.normalize()
     return bars
 
@@ -92,7 +90,7 @@ def simulate(path: Path, start: str | None, end: str | None, top_k: int, cost_bp
 
 def fetch(start: datetime, end: datetime, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    daily_bars(alpaca_market_data_client(), WATCHLIST, start, end)[BAR_COLUMNS].to_csv(path, index=False)
+    daily_bars(start, end)[BAR_COLUMNS].to_csv(path, index=False)
     print(f"Saved {path}")
 
 

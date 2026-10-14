@@ -13,7 +13,7 @@ src/
     market_data/ csv_bars.py               reads bars from a CSV file
     forecasting/ kronos_forecaster.py      expected returns from the Kronos model
   bootstrap.py   create_app(): the only place that builds concrete adapters and wires them
-trader.py        script and composition root for the Alpaca paper trader and the simulate / fetch / report commands
+trader.py        script and composition root for the fetch and simulate commands
 ```
 
 ## Rules
@@ -29,7 +29,6 @@ trader.py        script and composition root for the Alpaca paper trader and the
 ## Known debt
 
 - `domain/strategies.py` and `application/simulate.py` use pandas, because strategies read a closes DataFrame. `domain/model.py` and `domain/validation.py` do not, and a contract keeps it that way. `application/ports.py` imports pandas for the `Forecaster` signature.
-- `trader.py` still re-implements the Kronos pick logic for live trading (`rebalance`) instead of sharing the strategy used by the simulator.
 - `id` and `created_at` are generated inside `QueueRun`. A clock or id port is not added until a test needs to control them.
 - The tests do not need torch or the Kronos submodule, so the real `KronosForecaster` is only tested through a fake predictor.
 - There is no CI: the checks below run locally.

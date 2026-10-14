@@ -12,3 +12,6 @@ dist/
 .coverage
 htmlcov/
 .DS_Store
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/

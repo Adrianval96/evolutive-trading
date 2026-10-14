@@ -2,7 +2,7 @@
 
 A daily trading simulator. Several agents, each running a strategy, trade the same past market side by side with the same starting cash and the same trading costs, so their results can be compared like for like. Simulation only: no real money.
 
-The engine runs behind an HTTP service with a fixed v1 contract, so a web dashboard can start runs and show them. The contract is written in OpenAPI 3.1, one file per call, and kept outside this repo: put the files in `contracts/` and the API tests check every response against them. A separate script, `trader.py`, downloads market data from Alpaca and runs the Kronos strategy through the engine from the command line.
+The engine runs behind an HTTP service with a fixed v1 contract, so a web dashboard can start runs and show them. The contract is written in OpenAPI 3.1, one file per call, and kept outside this repo: put the files in `contracts/` and the API tests check every response against them.
 
 ## What exists
 
@@ -11,7 +11,6 @@ The engine runs behind an HTTP service with a fixed v1 contract, so a web dashbo
 | Simulation engine | Done. On each day's close every agent sees only the bars up to that day; its orders fill at the next day's open. Costs are charged per side on the traded amount. Kept positions are not resized. Bars before the start date are visible to strategies but not traded |
 | Strategies | `buy-and-hold`; `ma-crossover` (fast/slow moving averages with a stop-loss that waits for a fresh crossover); `kronos-top5` (holds the stocks with the best positive [Kronos](https://github.com/shiyu-coder/Kronos) forecast for the next close) |
 | HTTP service | `POST /v1/runs` validates a run and queues it in SQLite, answering `202`. Nothing executes queued runs yet |
-| `trader.py` | Fetches daily bars from Alpaca and simulates the Kronos strategy from the command line |
 
 ## What we have learned
 
@@ -70,13 +69,3 @@ git clone --recurse-submodules https://github.com/Adrianval96/strategy-arena.git
 .venv.nosync/bin/pip install -r requirements.txt
 cp .env.example .env
 ```
-
-`.venv.nosync` keeps torch out of iCloud. Python 3.12 because Kronos pins `pandas==2.2.2`, which has no 3.13 wheels. For market data, create a free Alpaca account, switch to **Paper Trading**, generate API keys and paste them into `.env`. Then:
-
-```bash
-set -a; . ./.env; set +a
-.venv.nosync/bin/python trader.py fetch 2023-01-01 2026-10-01 data/bars.csv
-.venv.nosync/bin/python trader.py simulate data/bars.csv --cost-bps 5
-```
-
-`data/` is git-ignored: market data terms don't allow publishing the bars. By default the simulation starts after 512 days of history, the context Kronos reads; set `--start` and `--end` to choose the window and `--top-k` for the number of picks. Only results after June 2024 say anything about Kronos. `trader.py simulate examples/synthetic_bars.csv --start 2026-09-22` runs Kronos on the sample data instead.

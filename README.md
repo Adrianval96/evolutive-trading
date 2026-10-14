@@ -2,7 +2,7 @@
 
 A daily trading simulator. Several agents, each running a strategy, trade the same past market side by side with the same starting cash and the same trading costs, so their results can be compared like for like. Simulation only: no real money.
 
-The engine runs behind an HTTP service with a fixed contract ([`openapi.yaml`](openapi.yaml)), so a web dashboard can start runs and show them. A separate script, `trader.py`, downloads market data and paper-trades one strategy on Alpaca.
+The engine runs behind an HTTP service with a fixed v1 contract, so a web dashboard can start runs and show them. The contract is written in OpenAPI 3.1, one file per call, and kept outside this repo: put the files in `contracts/` and the API tests check every response against them. A separate script, `trader.py`, downloads market data and paper-trades one strategy on Alpaca.
 
 ## What exists
 

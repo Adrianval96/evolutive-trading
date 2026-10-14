@@ -120,10 +120,10 @@ def test_each_step_is_reported_as_it_happens():
     run_simulation(run_spec(buy_and_hold()), make_bars(PRICES), on_step=steps.append)
 
     assert len(steps) == 3
-    for step in steps:
-        contract("StepEvent", json.loads(json.dumps(asdict(step), default=float)))
     assert steps[0].timestamp == "2026-01-05T16:00:00-05:00"
     assert steps[0].agents[0].trades == (StepTrade("A", "buy", 50, 10), StepTrade("B", "buy", 25, 20))
+    for step in steps:
+        contract("StepEvent", json.loads(json.dumps(asdict(step), default=float)))
 
 
 def test_a_missing_bar_fails_loudly():

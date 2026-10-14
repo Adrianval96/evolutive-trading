@@ -74,7 +74,6 @@ class SimulationResult:
     agents: tuple[AgentResult, ...]
 
 
-# What a simulation reports after each step. Field names follow the StepEvent schema in openapi.yaml.
 @dataclass(frozen=True)
 class StepTrade:
     symbol: str

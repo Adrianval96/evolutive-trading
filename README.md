@@ -19,7 +19,7 @@ Kronos-small has shown no forecasting edge on data after its June 2024 pre-train
 
 ## Roadmap
 
-1. **Engine service.** A worker that executes queued runs, then the rest of the contract: `GET /v1/runs/{id}` (status, progress, results), `GET /v1/runs/{id}/events` (live progress as server-sent events), `GET /v1/strategies` and `GET /v1/market` (what a client can offer).
+1. **Engine service.** A worker that executes queued runs, then the rest of the contract: `GET /v1/runs/{id}` (status, progress, results), `GET /v1/runs` (every run, newest first, a page at a time), `GET /v1/runs/{id}/events` (live progress as server-sent events), `GET /v1/strategies` and `GET /v1/market` (what a client can offer).
 2. **Dashboard.** A separate Next.js app that configures runs, follows them live and compares agents' equity curves and trades.
 3. **Strategies.** Open. Ideas still to test: using Kronos for position sizing or as a generator of possible futures rather than as a forecast, trading only when an expected move clears costs, and letting agents compete so the strongest are kept and varied.
 
